@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="%LANG_ISO_CODE%">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Politique de sécurité : uniquement du contenu de ce site. connect-src 'none' : la page ne peut ouvrir AUCUNE connexion
+         (fetch, XHR, WebSocket, beacon…) ; les réglages restent sur l'appareil. Les styles en ligne sont requis par React Native Web. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'none'; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'" />
+    <meta name="referrer" content="no-referrer" />
+    <!-- interactive-widget : sur Android, la page se raccourcit quand le clavier s'ouvre (le champ actif reste visible). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <title>%WEB_TITLE%</title>
+    <meta name="theme-color" content="#5C2E8A" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Binkām" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="icon" href="icon-192.png" />
+    <style id="expo-reset">
+      html, body { height: 100%; }
+      body { overflow: hidden; background: #F4EBD9; }
+      @media (prefers-color-scheme: dark) { body { background: #29143D; } }
+      #root { display: flex; height: 100%; flex: 1; }
+    </style>
+  </head>
+  <body>
+    <noscript>Cette application a besoin de JavaScript.</noscript>
+    <div id="root"></div>
+    <script src="register-sw.js" defer></script>
+  </body>
+</html>
