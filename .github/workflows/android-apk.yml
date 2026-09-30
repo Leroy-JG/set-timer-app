@@ -1,0 +1,127 @@
+# Construit un APK Android installable directement (sans Google Play, sans compte Expo).
+# Lancer à la main (Actions → « APK Android » → Run workflow) ou en poussant un tag « v* » (ex. v1.1.0) :
+# l'APK est alors joint à la release GitHub correspondante.
+# Signature : clé personnelle si les secrets ANDROID_* existent (voir « Signature avec la clé personnelle »),
+# sinon clé de debug publique du modèle Expo (suffisant pour s'installer soi-même, à ne pas diffuser).
+name: APK Android
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+# Droits minimaux : lecture seule pour construire ; l'écriture (release) n'est donnée qu'au job qui publie.
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Générer le projet Android natif
+        run: npx expo prebuild --platform android --no-install
+      # Signature : si les 4 secrets existent (Réglages → Secrets and variables → Actions), l'APK est signé avec VOTRE clé.
+      # Sinon (ou si certains manquent) : clé de debug publique du modèle Expo, avec un avertissement.
+      - name: Signature avec la clé personnelle
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -eu
+          present=0
+          for v in "$KEYSTORE_B64" "$ANDROID_KEYSTORE_PASSWORD" "$ANDROID_KEY_ALIAS" "$ANDROID_KEY_PASSWORD"; do
+            [ -n "$v" ] && present=$((present + 1))
+          done
+          if [ "$present" -eq 0 ]; then
+            echo "::warning::Aucun secret de signature : APK signé avec la clé de debug PUBLIQUE (à ne pas diffuser)."
+            exit 0
+          fi
+          if [ "$present" -ne 4 ]; then
+            echo "::error::Secrets de signature incomplets ($present/4)."
+            exit 1
+          fi
+          umask 077
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks"
+            echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
+            echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
+            echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          python3 scripts/sign-release.py
+      # Garantie « les données restent sur l'appareil » : pas de permission Internet, pas de sauvegarde Google.
+      - name: Vérifier le manifeste généré (confidentialité)
+        run: |
+          set -eu
+          M=android/app/src/main/AndroidManifest.xml
+          grep -q 'android:allowBackup="false"' "$M" || { echo "::error::allowBackup n'est pas désactivé."; exit 1; }
+          grep -q 'android.permission.INTERNET" tools:node="remove"' "$M" || { echo "::error::La permission INTERNET n'est pas retirée."; exit 1; }
+      - name: Compiler l'APK
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon
+      - name: Renommer l'APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk Binkam.apk
+      # Contrôle sur l'APK final (après fusion avec les manifestes de toutes les bibliothèques).
+      - name: Vérifier l'APK (confidentialité)
+        run: |
+          set -eu
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          "$AAPT2" dump permissions Binkam.apk
+          if "$AAPT2" dump permissions Binkam.apk | grep -q 'android.permission.INTERNET'; then
+            echo "::error::L'APK déclare la permission INTERNET : il pourrait envoyer des données sur Internet."
+            exit 1
+          fi
+          # Liste blanche : toute permission qui n'est pas ici fait échouer le build (une dépendance qui en ajouterait une
+          # doit être un choix explicite : la bloquer dans app.json > android.blockedPermissions, ou l'autoriser ici ET dans PRIVACY.md).
+          ALLOWED=" android.permission.POST_NOTIFICATIONS android.permission.VIBRATE android.permission.RECEIVE_BOOT_COMPLETED android.permission.ACCESS_NETWORK_STATE android.permission.WAKE_LOCK android.permission.SCHEDULE_EXACT_ALARM android.permission.USE_EXACT_ALARM com.binkam.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION "
+          BAD=0
+          for p in $("$AAPT2" dump permissions Binkam.apk | sed -n "s/^uses-permission[^:]*: name='\([^']*\)'.*/\1/p"); do
+            case "$ALLOWED" in
+              *" $p "*) ;;
+              *) echo "::error::Permission inattendue dans l'APK : $p"; BAD=1 ;;
+            esac
+          done
+          [ "$BAD" = 0 ] || exit 1
+          if ! "$AAPT2" dump xmltree --file AndroidManifest.xml Binkam.apk | grep allowBackup | grep -Eq '=(false|\(type 0x12\)0x0)'; then
+            echo "::error::La sauvegarde automatique Android (allowBackup) n'est pas désactivée dans l'APK."
+            exit 1
+          fi
+      - name: Empreinte de la signature
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | tail -1)
+          "$APKSIGNER" verify --print-certs Binkam.apk | grep -E "certificate (DN|SHA-256)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Binkam-apk
+          path: Binkam.apk
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: apk
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Binkam-apk
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: Binkam.apk

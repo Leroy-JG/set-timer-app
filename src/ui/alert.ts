@@ -2,15 +2,24 @@ import { Platform, Vibration } from 'react-native';
 
 let audio: AudioContext | null = null;
 
+type AudioCtor = typeof AudioContext;
+function audioContext(): AudioContext | null {
+  try {
+    const g = globalThis as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
+    const Ctx = g.AudioContext ?? g.webkitAudioContext;
+    if (!Ctx) return null;
+    audio ??= new Ctx();
+    return audio;
+  } catch {
+    return null;
+  }
+}
+
 /** Bip court (Web Audio : aucun fichier, aucune connexion). */
 function beep(times: number) {
   try {
-    const Ctx: typeof AudioContext | undefined =
-      (globalThis as { AudioContext?: typeof AudioContext; webkitAudioContext?: typeof AudioContext }).AudioContext ??
-      (globalThis as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    audio ??= new Ctx();
-    const ctx = audio;
+    const ctx = audioContext();
+    if (!ctx) return;
     void ctx.resume();
     for (let i = 0; i < times; i++) {
       const t = ctx.currentTime + i * 0.28;
@@ -30,8 +39,12 @@ function beep(times: number) {
   }
 }
 
-/** Fin d'une série (`final` : fin de la dernière série). Vibre sur téléphone, bipe sur le web. */
-export function notifySetDone(final: boolean) {
+/**
+ * Fin d'une série constatée dans l'app (`final` : dernière série).
+ * `covered` : sur téléphone, la notification système fait déjà le son et la vibration.
+ */
+export function alertSetDone(final: boolean, covered: boolean) {
+  if (covered) return;
   try {
     Vibration.vibrate(final ? [0, 400, 150, 400, 150, 400] : [0, 350]);
   } catch {
@@ -44,10 +57,7 @@ export function notifySetDone(final: boolean) {
 export function primeAudio() {
   if (Platform.OS !== 'web') return;
   try {
-    const Ctx: typeof AudioContext | undefined = (globalThis as { AudioContext?: typeof AudioContext }).AudioContext;
-    if (!Ctx) return;
-    audio ??= new Ctx();
-    void audio.resume();
+    void audioContext()?.resume();
   } catch {
     // ignoré
   }

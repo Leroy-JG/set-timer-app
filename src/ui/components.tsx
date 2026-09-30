@@ -1,33 +1,167 @@
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import { angleFraction, unwrapFraction } from '../domain/timer';
 import { FONT, useTheme } from './theme';
 
-/** Anneau de progression : l'arc se vide vers 00:00 (`fraction` = temps restant, 1 → 0). */
-export function Ring({ size, fraction, children }: { size: number; fraction: number; children?: React.ReactNode }) {
+/**
+ * Anneau de progression : la partie colorée est le temps qui reste ; elle se vide dans le sens des aiguilles d'une montre
+ * vers 00:00 (le point de départ de l'arc avance autour du cercle).
+ * Quand `interactive`, on peut appuyer ou glisser sur l'anneau pour déplacer l'horloge : le point touché devient le point de départ
+ * de l'arc (un quart du cercle = un quart du temps écoulé). Le centre (`children`) reçoit ses propres appuis.
+ */
+export function Ring({
+  size,
+  fraction,
+  complete,
+  interactive,
+  onSeek,
+  children,
+}: {
+  size: number;
+  /** Temps restant (1 → 0). */
+  fraction: number;
+  /** Toutes les séries sont faites : anneau plein, en vert. */
+  complete?: boolean;
+  interactive?: boolean;
+  onSeek?: (elapsed: number) => void;
+  children?: React.ReactNode;
+}) {
   const theme = useTheme();
-  const stroke = Math.max(10, Math.round(size * 0.05));
+  const stroke = Math.max(12, Math.round(size * 0.055));
+  const pad = Math.round(stroke * 1.2); // marge pour la lueur de l'arc et le curseur, qui dépassent du cercle
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const arc = c * Math.min(1, Math.max(0, fraction));
+  const f = complete ? 1 : Math.min(1, Math.max(0, fraction));
+  const arc = c * f;
+  const color = complete ? theme.success : theme.bar;
+  const startDeg = complete ? 0 : (1 - f) * 360; // angle du point de départ de l'arc, depuis le haut
+  const rad = (startDeg * Math.PI) / 180;
+  const knob = { x: size / 2 + r * Math.sin(rad), y: size / 2 - r * Math.cos(rad) };
+
+  // Geste : appui ou glissement. Les valeurs « vivantes » passent par des refs (le PanResponder n'est créé qu'une fois).
+  const box = useRef<View>(null);
+  const live = useRef({ interactive: !!interactive, onSeek, size });
+  live.current = { interactive: !!interactive, onSeek, size };
+  const center = useRef<{ x: number; y: number } | null>(null);
+  const active = useRef(false);
+  const moved = useRef(false);
+  const start = useRef({ x: 0, y: 0 });
+  const last = useRef(0);
+
+  const refreshCenter = useCallback((then?: (old: { x: number; y: number } | null, fresh: { x: number; y: number }) => void) => {
+    box.current?.measureInWindow((x, y, w, h) => {
+      if (w <= 0 || h <= 0) return;
+      const fresh = { x: x + w / 2, y: y + h / 2 };
+      const old = center.current;
+      center.current = fresh;
+      then?.(old, fresh);
+    });
+  }, []);
+
+  const apply = useCallback((pageX: number, pageY: number, first: boolean) => {
+    const origin = center.current;
+    if (!origin || !active.current) return;
+    const dx = pageX - origin.x;
+    const dy = pageY - origin.y;
+    if (first && Math.hypot(dx, dy) > live.current.size * 0.62) {
+      active.current = false; // touche hors du cercle
+      return;
+    }
+    const raw = angleFraction(dx, dy);
+    const next = first ? raw : unwrapFraction(last.current, raw);
+    last.current = next;
+    live.current.onSeek?.(next);
+  }, []);
+
+  // La position du cercle est mesurée à l'avance : un appui très bref (le doigt repart avant la fin d'une mesure) compte quand même.
+  useEffect(() => {
+    if (interactive) refreshCenter();
+  }, [interactive, size, refreshCenter]);
+
+  const pan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => live.current.interactive,
+        onMoveShouldSetPanResponder: () => false,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderGrant: (e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          start.current = { x: pageX, y: pageY };
+          active.current = true;
+          moved.current = false;
+          if (center.current) apply(pageX, pageY, true);
+          // Vérifie la position (l'écran a pu bouger depuis la dernière mesure) ; si elle a changé, on recalcule le point touché.
+          refreshCenter((old, fresh) => {
+            if (old && Math.hypot(old.x - fresh.x, old.y - fresh.y) < 2) return;
+            if (moved.current) return;
+            active.current = true;
+            apply(start.current.x, start.current.y, true);
+          });
+        },
+        onPanResponderMove: (_e, g) => {
+          moved.current = true;
+          apply(g.moveX, g.moveY, false);
+        },
+        onPanResponderRelease: () => {
+          active.current = false;
+        },
+        onPanResponderTerminate: () => {
+          active.current = false;
+        },
+      }),
+    [apply, refreshCenter],
+  );
+
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
-      <Svg width={size} height={size} style={StyleSheet.absoluteFill}>
-        <Circle cx={size / 2} cy={size / 2} r={r} stroke={theme.track} strokeWidth={stroke} fill="none" />
-        {arc > 0.5 && (
-          <Circle
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            stroke={theme.bar}
-            strokeWidth={stroke}
-            strokeLinecap="round"
-            fill="none"
-            strokeDasharray={`${arc} ${c}`}
-            transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          />
-        )}
-      </Svg>
+    <View
+      ref={box}
+      onLayout={() => refreshCenter()}
+      {...pan.panHandlers}
+      accessibilityHint={interactive ? 'Touchez le cercle pour avancer ou reculer le chrono' : undefined}
+      style={[
+        { width: size, height: size, alignItems: 'center', justifyContent: 'center' },
+        Platform.OS === 'web' ? ({ touchAction: 'none', userSelect: 'none', cursor: interactive ? 'pointer' : 'default' } as object) : null,
+      ]}
+    >
+      <View pointerEvents="none" style={{ position: 'absolute', left: -pad, top: -pad, width: size + 2 * pad, height: size + 2 * pad }}>
+        <Svg width={size + 2 * pad} height={size + 2 * pad} viewBox={`${-pad} ${-pad} ${size + 2 * pad} ${size + 2 * pad}`}>
+          <Circle cx={size / 2} cy={size / 2} r={r} stroke={theme.track} strokeWidth={stroke} fill="none" />
+          {arc > 0.5 && (
+            <>
+              <Circle
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                stroke={color}
+                strokeOpacity={0.18}
+                strokeWidth={stroke * 1.9}
+                strokeLinecap="round"
+                fill="none"
+                strokeDasharray={`${arc} ${c}`}
+                transform={`rotate(${-90 + startDeg} ${size / 2} ${size / 2})`}
+              />
+              <Circle
+                cx={size / 2}
+                cy={size / 2}
+                r={r}
+                stroke={color}
+                strokeWidth={stroke}
+                strokeLinecap="round"
+                fill="none"
+                strokeDasharray={`${arc} ${c}`}
+                transform={`rotate(${-90 + startDeg} ${size / 2} ${size / 2})`}
+              />
+            </>
+          )}
+          {interactive && !complete && (
+            <>
+              <Circle cx={knob.x} cy={knob.y} r={stroke * 0.95} fill={theme.bg} fillOpacity={0.85} />
+              <Circle cx={knob.x} cy={knob.y} r={stroke * 0.62} fill={theme.done} />
+            </>
+          )}
+        </Svg>
+      </View>
       {children}
     </View>
   );

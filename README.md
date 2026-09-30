@@ -1,6 +1,6 @@
-# Set Timer
+# Binkām
 
-Minuteur de séries pour la salle. Un seul écran : durée, nombre de séries, cercle de décompte, tirets de progression.
+Minuteur de séries pour la salle (notification + vibration + son à la fin de chaque série, même téléphone verrouillé). Un seul écran : durée, nombre de séries, cercle de décompte, tirets de progression.
 Hors ligne, sans compte, sans connexion réseau (les réglages restent sur l'appareil).
 
 ```

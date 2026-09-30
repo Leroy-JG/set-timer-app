@@ -1,6 +1,6 @@
 // Service worker minimal : l'application fonctionne hors ligne après la première visite.
 // Les fichiers de l'application (JS, icônes…) sont mis en cache à la volée ; la navigation retombe sur index.html.
-const CACHE = 'st-cache-v1'; // à incrémenter si une icône change (les icônes sont servies depuis le cache)
+const CACHE = 'st-cache-v2'; // à incrémenter si une icône change (les icônes sont servies depuis le cache)
 
 // À l'installation : on met en cache la page ET les scripts qu'elle référence, pour que la première visite
 // suffise à fonctionner hors ligne (sans dépendre du cache HTTP du navigateur).
@@ -60,5 +60,16 @@ self.addEventListener('fetch', (event) => {
           return res;
         }),
     ),
+  );
+});
+
+// Clic sur une notification de fin de série : on ramène l'application au premier plan.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const client of list) if ('focus' in client) return client.focus();
+      return self.clients.openWindow('./');
+    }),
   );
 });

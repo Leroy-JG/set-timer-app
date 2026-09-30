@@ -1,4 +1,4 @@
-// Génère les 8 icônes de l'application (PNG) : un anneau de progression (arc doré sur piste crème) au-dessus de
+// Génère les 9 icônes de l'application (PNG) : un anneau de progression (arc doré sur piste crème) au-dessus de
 // quatre tirets de séries (deux faits en crème, deux à faire en gris), sur le fond de marque.
 // Le SVG est rendu dans Chromium via Playwright, puis capturé en PNG.
 //
@@ -16,34 +16,37 @@ const PRIMARY = '#5C2E8A';
 const ACCENT = '#C9A227';
 const CREAM = '#F4EBD9';
 
-/** Motif centré dans un carré de 1024. */
-function motif() {
+/** Motif centré dans un carré de 1024. `mono` : silhouette blanche (icône de notification Android, qui ne garde que la forme). */
+function motif(mono = false) {
   const cx = 512;
   const cy = 452;
   const r = 232;
   const stroke = 62;
   const c = 2 * Math.PI * r;
   const arc = c * 0.68;
-  let out = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${CREAM}" stroke-opacity=".28" stroke-width="${stroke}"/>`;
-  out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${ACCENT}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${arc} ${c}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  const track = mono ? '#FFFFFF' : CREAM;
+  const arcColor = mono ? '#FFFFFF' : ACCENT;
+  let out = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${track}" stroke-opacity="${mono ? 0.4 : 0.28}" stroke-width="${stroke}"/>`;
+  out += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${arcColor}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${arc} ${c}" transform="rotate(-90 ${cx} ${cy})"/>`;
   const w = 112;
   const gap = 28;
   const total = 4 * w + 3 * gap;
   const y = 812;
   for (let i = 0; i < 4; i++) {
     const x = cx - total / 2 + i * (w + gap);
+    const tile = mono ? '#FFFFFF' : CREAM;
     out += i < 2
-      ? `<rect x="${x}" y="${y}" width="${w}" height="36" rx="18" fill="${CREAM}"/>`
-      : `<rect x="${x}" y="${y}" width="${w}" height="36" rx="18" fill="${CREAM}" fill-opacity=".28"/>`;
+      ? `<rect x="${x}" y="${y}" width="${w}" height="36" rx="18" fill="${tile}"/>`
+      : `<rect x="${x}" y="${y}" width="${w}" height="36" rx="18" fill="${tile}" fill-opacity="${mono ? 0.4 : 0.28}"/>`;
   }
   return out;
 }
 
 /** SVG 1024×1024. `scale` réduit le motif autour du centre (zones de sécurité des masques d'icône). */
-function svg({ background, scale = 1 }) {
+function svg({ background, scale = 1, mono = false }) {
   const bg = background ? `<rect width="1024" height="1024" fill="${background}"/>` : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-    ${bg}<g transform="translate(512 512) scale(${scale}) translate(-512 -512)">${motif()}</g></svg>`;
+    ${bg}<g transform="translate(512 512) scale(${scale}) translate(-512 -512)">${motif(mono)}</g></svg>`;
 }
 
 const jobs = [
@@ -56,6 +59,7 @@ const jobs = [
   ['public/icon-512.png', 512, { background: PRIMARY }, false],
   ['public/icon-maskable-512.png', 512, { background: PRIMARY, scale: 0.95 }, false], // maskable = cercle de 80 %
   ['public/apple-touch-icon.png', 180, { background: PRIMARY }, false],
+  ['assets/notification-icon.png', 96, { mono: true, scale: 0.95 }, true], // silhouette blanche sur fond transparent (Android)
 ];
 
 function loadPlaywright() {

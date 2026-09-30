@@ -1,22 +1,40 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { sanitizeConfig, type TimerConfig } from './domain/timer';
+import { sanitizeConfig, type TimerConfig, type TimerState } from './domain/timer';
 
-const KEY = 'st:config:v1';
+const CONFIG_KEY = 'st:config:v1';
+const TIMER_KEY = 'st:timer:v1';
 
-/** Réglages enregistrés sur l'appareil (jamais envoyés ailleurs). Toute erreur retombe sur les valeurs par défaut. */
-export async function loadConfig(): Promise<TimerConfig> {
+async function read(key: string): Promise<unknown> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    return sanitizeConfig(raw ? JSON.parse(raw) : null);
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
   } catch {
-    return sanitizeConfig(null);
+    return null; // stockage indisponible ou contenu illisible : valeurs par défaut
   }
 }
 
-export async function saveConfig(config: TimerConfig): Promise<void> {
+async function write(key: string, value: unknown): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(config));
+    await AsyncStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // stockage indisponible (navigation privée…) : l'app fonctionne quand même
+    // stockage indisponible (navigation privée, disque plein…) : l'app fonctionne quand même
   }
+}
+
+/** Réglages enregistrés sur l'appareil (jamais envoyés ailleurs). */
+export async function loadConfig(): Promise<TimerConfig> {
+  return sanitizeConfig(await read(CONFIG_KEY));
+}
+
+export function saveConfig(config: TimerConfig): Promise<void> {
+  return write(CONFIG_KEY, config);
+}
+
+/** État du chrono, enregistré à chaque changement : il survit à la fermeture de l'app par le système. Validé par `sanitizeState`. */
+export function loadTimer(): Promise<unknown> {
+  return read(TIMER_KEY);
+}
+
+export function saveTimer(state: TimerState): Promise<void> {
+  return write(TIMER_KEY, state);
 }
