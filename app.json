@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Set Timer",
+    "slug": "set-timer-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "settimer",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#F4EBD9",
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "backgroundColor": "#5C2E8A",
+          "dark": { "backgroundColor": "#29143D", "image": "./assets/splash-icon.png" }
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.settimer.app",
+      "versionCode": 1,
+      "adaptiveIcon": { "foregroundImage": "./assets/adaptive-icon.png", "backgroundColor": "#5C2E8A" },
+      "allowBackup": false,
+      "blockedPermissions": [
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "ios": { "bundleIdentifier": "com.settimer.app", "supportsTablet": true },
+    "web": { "bundler": "metro", "output": "single", "favicon": "./assets/favicon.png", "name": "Set Timer", "shortName": "Set Timer", "lang": "fr" }
+  }
+}
