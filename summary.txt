@@ -1,0 +1,76 @@
+
+=== 0. Préparation de l'émulateur ===
+Android API 34, sdk_gphone64_x86_64
+Écran 1080x2400
+✅ APK installé
+autorisation de notifier accordée
+
+=== 1. Lancement et « GO » ===
+✅ l'app est lancée, bouton GO trouvé (540,1219)
+
+=== 2. Compte à rebours persistant juste après GO ===
+✅ compte à rebours : chronomètre à rebours, silencieux, canal dédié
+   extras de la notification :  when=1790892856268; android.title=String (Série 1 sur 4); android.chronometerCountDown=Boolean (true); android.showChronometer=Boolean (true); android.text=String (Chrono en cours · touchez pour revenir à l’app); android.showWhen=Boolean (true); android.requestPromotedOngoing=Boolean (true);
+   importance : importance=3 ; flags : flags=0x6a ; visibilité : vis=PUBLIC
+✅ notification persistante (drapeau ONGOING, flags=0x6a)
+✅ le service TimerService tourne au premier plan
+✅ la minuterie de fin (EndReceiver) est programmée dans AlarmManager
+✅ la minuterie de fin n'est pas une alarme de réveil
+
+=== 3. Volet de notifications (on tire depuis le haut de l'écran) ===
+   textes du système : Internet, AndroidWifi | Internet,AndroidWifi | Internet | Bluetooth, On | Bluetooth. | Bluetooth | Flashlight, Camera in use | Flashlight | Do Not Disturb, Off | Do Not Disturb. | Do Not Disturb | Binkām | • | 01:14 | 1 minute, 14 seconds | Collapse | Série 1 sur 4 | Chrono en cours · touchez pour revenir à l’app | Silent | Android System | Expand | 2 | Serial console enabled | Performance is impacted. To disable, check bootloader. | Configure AT Translated Set 2 keyboard | Tap to select language and layout | Manage | 10:13 | 10:13 PM | Thu, Oct 1 | Wifi signal full. | Phone three bars. | Battery charging, 100 percent. | 100%
+✅ le titre « Série 1 sur 4 » est visible dans le volet
+✅ un chronomètre (mm:ss) défile dans le volet : 01:14
+
+=== 4. L'utilisateur est sur un autre écran (accueil) ===
+✅ le compte à rebours reste quand l'app est en arrière-plan
+
+=== 5. Téléphone verrouillé (code PIN), on rallume juste l'écran ===
+code PIN posé
+   écran : mWakefulness=Asleep
+   écran de verrouillage : isKeyguardShowing=false isKeyguardShowing=true 
+   textes du système : Série 1 sur 4 | • | 00:52 | 52 seconds | Chrono en cours · touchez pour revenir à l’app | Expand | 10:13 | Thu, Oct 1 | T-Mobile | Wifi signal full. | Phone three bars. | Battery charging, 100 percent. | 100% | Charged | Device locked
+✅ le titre « Série 1 sur 4 » est visible sur l'écran verrouillé
+✅ un chronomètre (mm:ss) est visible sur l'écran verrouillé : 00:52
+
+=== 6. Écran éteint, verrouillé, Doze forcé : la notification de fin arrive à 00:00 ===
+   Doze profond : IDLE
+   attente de 60 s (fin prévue à 90 s après GO)…
+✅ notification de fin de série (bandeau, son, vibration)
+   importance : importance=5 ; catégorie : 
+✅ la notification de fin n'est pas de catégorie « alarme » (notification ordinaire)
+✅ importance ≥ 4 : bandeau et son
+✅ le système a joué le son / la vibration de la notification de fin
+✅ le compte à rebours a disparu à la fin de la série
+✅ TimerService est arrêté après la fin
+✅ la notification de fin est lisible sur l'écran verrouillé
+
+=== 7. Retour dans l'app ===
+   textes du système : Durée | Durée −5 secondes | 01:30 | Durée +5 secondes | Séries | Une série de moins | 4 | Nombre de séries | Une série de plus | Go, lancer le chrono | GO | Série 2 sur 4 | Son dans l’app | Son | Notifications : chrono en direct et fin de série | Notifs | Écran toujours allumé | Écran | Pour que le chrono continue quand vous quittez l’app, touchez ici puis « Autoriser ».
+   fenêtre au premier plan :   mCurrentFocus=Window{1befdee u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}
+✅ l'app affiche « Série 2 sur 4 » (la série terminée est comptée)
+
+=== 8. Arrêt par appui sur le chrono ===
+✅ nouveau GO : compte à rebours de nouveau là
+✅ le nouveau GO retire la notification de fin précédente
+✅ arrêt : le compte à rebours disparaît
+✅ arrêt : pas de notification de fin
+   minuteries EndReceiver en attente : 0
+✅ arrêt : la minuterie de fin est annulée
+✅ arrêt : TimerService arrêté
+
+=== 9. Fin de série avec l'app au premier plan (on avance l'horloge à 99 % en touchant le cercle) ===
+   cercle ≈ 944px, appui à (512,795)
+   textes du système : Durée | Durée −5 secondes | 01:30 | Durée +5 secondes | Séries | Une série de moins | 4 | Nombre de séries | Une série de plus | Go, lancer le chrono | GO | Série 4 sur 4 | Son dans l’app | Son | Notifications : chrono en direct et fin de série | Notifs | Écran toujours allumé | Écran | Pour que le chrono continue quand vous quittez l’app, touchez ici puis « Autoriser ».
+   fenêtre au premier plan :   mCurrentFocus=Window{1befdee u0 com.google.android.apps.nexuslauncher/com.google.android.apps.nexuslauncher.NexusLauncherActivity}
+✅ fin au premier plan : la notification de fin s'affiche aussi
+✅ fin au premier plan : le compte à rebours a disparu
+
+=== 10. L'utilisateur balaie le compte à rebours : il est republié (information) ===
+⚠️  ligne du compte à rebours introuvable dans le volet pour le balayage (voir shade2.xml)
+
+=== 11. Plantages ===
+✅ aucun plantage de l'app
+✅ aucune erreur de service au premier plan ni de notification invalide
+
+Résultat : 0 échec(s), 1 avertissement(s).

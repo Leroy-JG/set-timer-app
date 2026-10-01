@@ -1,0 +1,21 @@
+ACTIVITY MANAGER SERVICES (dumpsys activity services)
+  User 0 active services:
+  * ServiceRecord{f2bfcf2 u0 com.binkam.app/expo.modules.livetimer.TimerService}
+    intent={cmp=com.binkam.app/expo.modules.livetimer.TimerService}
+    packageName=com.binkam.app
+    processName=com.binkam.app
+    baseDir=/data/app/~~X6bfz99Nb7AJtNqvJ-PibA==/com.binkam.app-XnxwkMr5e5t2BVsS5i0jdQ==/base.apk
+    dataDir=/data/user/0/com.binkam.app
+    app=ProcessRecord{5264ee7 4115:com.binkam.app/u0a192}
+    mAllowWhileInUsePermissionInFgsReason=PROC_STATE_TOP
+    allowUiJobScheduling=true
+    recentCallingPackage=com.binkam.app
+    recentCallingUid=10192
+    allowStartForeground=PROC_STATE_TOP
+    startForegroundCount=1
+    infoAllowStartForeground=[callingPackage: com.binkam.app; callingUid: 10192; uidState: TOP ; uidBFSL: [BFSL]; intent: Intent { cmp=com.binkam.app/expo.modules.livetimer.TimerService (has extras) }; code:PROC_STATE_TOP; tempAllowListReason:<null>; targetSdkVersion:36; callerTargetSdkVersion:36; startForegroundCount:0; bindFromPackage:null: isBindService:false]
+    isForeground=true foregroundId=4242 types=40000000 foregroundNoti=Notification(channel=set-live shortcut=null contentView=null vibrate=null sound=null defaults=0x0 flags=0x6a color=0xff5c2e8a category=progress vis=PUBLIC)
+    createTime=-6s923ms startingBgTimeout=--
+    lastActivity=-6s916ms restartTime=-6s916ms createdFromFg=true
+    startRequested=true delayedStop=false stopIfKilled=true callStart=true lastStartId=1
+ startCommandResult=2
