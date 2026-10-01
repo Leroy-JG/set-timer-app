@@ -7,7 +7,11 @@ Minuteur de séries pour la salle de sport. Nom affiché : **« Binkām »** (d�
 Application « sœur » d'Alam (`leroy-jg/multi-level-progress-app`) : même famille de marque, même pile technique.
 
 ## Écran unique (demande de l'utilisateur)
-1. **Durée** d'une série (mm : ss) — champs numériques + boutons −/+ (pas de 5 s), bornes 00:01 → 99:59.
+1. **Durée** d'une série (mm : ss) — **saisie chiffre après chiffre, comme un micro-ondes** (demande utilisateur) : on tape 0 1 3 0 et ça donne 01:30 ; chaque chiffre entre à droite (00:00 → 00:01 → 00:13 → 01:30), au-delà de 4 chiffres les plus anciens
+   sortent à gauche, retour arrière = retire le dernier chiffre, secondes > 59 reportées (0090 → 01:30), le premier chiffre tapé remplace l'ancienne durée. Un seul champ `TimeField` (`components.tsx`, champ de saisie invisible posé sur l'affichage) ; logique pure dans
+   `src/domain/timeEntry.ts` (testée). Boutons −/+ (pas de 5 s), bornes 00:01 → 99:59.
+   **Appui sur « GO » pendant qu'un champ (durée ou séries) a encore le focus** : la saisie est enregistrée d'abord et c'est elle qui part (`src/ui/pendingEdit.ts` : les champs se déclarent tant qu'ils ont une saisie non validée ; `useTimer.press` les valide, ferme le clavier ;
+   `update` met à jour `configRef` / `stateRef` tout de suite pour que le « GO » suivant utilise la nouvelle valeur). Si le chrono tournait, la saisie le remet à zéro et l'appui lance la série avec la nouvelle durée.
 2. **Nombre de séries** (1 → 99).
 3. **Cadran** : un anneau qui se vide vers 00:00, avec **de l'eau** qui baisse dedans ; au centre « **GO** » tant que le chrono ne tourne pas, puis MM:SS ; légende « Série n sur N » / « Terminé ».
 4. **Tirets** en bas : un par série, gris puis **blancs** quand la série est terminée ; le tiret de la série en cours se remplit. Ils prennent **toute la largeur** utile (flex, quel que soit leur nombre).
@@ -112,7 +116,7 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 ## Notes techniques
 - `npx expo install` échoue dans le cloud (proxy) : `npm install pkg@version` avec les versions de `node_modules/expo/bundledNativeModules.json`.
 - Test web : `CI=1 npx expo export --platform web --output-dir dist`, servir `dist/`, piloter avec Playwright (`/opt/node22/lib/node_modules/playwright`,
-  `executablePath: '/opt/pw-browsers/chromium'`, `--no-sandbox`). Dans les tests, utiliser `{ exact: true }` pour `getByLabel` (« Secondes » ≈ « Durée −5 secondes »).
+  `executablePath: '/opt/pw-browsers/chromium'`, `--no-sandbox`). Dans les tests, utiliser `{ exact: true }` pour `getByLabel` (« Nombre de séries » ; la durée est « Durée, minutes et secondes » : cliquer puis `keyboard.type('0130')`).
 - Test geste sur web : `page.mouse.click/down/move/up` sur l'anneau (rayon = taille/2 − trait/2) ; le centre est le bouton « Go, lancer le chrono » / « Terminer la série ». Les boutons à bascule exposent `aria-checked`.
 - Arrêter un serveur de test : `fuser -k PORT/tcp` (pas de `pkill -f`).
 

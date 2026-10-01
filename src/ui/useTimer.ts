@@ -1,6 +1,6 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState, Keyboard, Platform } from 'react-native';
 import { liveTitle, setDoneBody } from '../domain/messages';
 import { DEFAULT_PREFS, type Prefs } from '../domain/prefs';
 import {
@@ -29,6 +29,7 @@ import {
 import { startLiveTimer, stopLiveTimer } from '../liveTimer';
 import { loadConfig, loadPrefs, loadTimer, saveConfig, savePrefs, saveTimer } from '../storage';
 import { alertSetDone, alertStart, prepareSound } from './alert';
+import { commitPendingEdits } from './pendingEdit';
 
 const KEEP_AWAKE_TAG = 'set-timer';
 /** Délai avant de programmer la notification : un glissement sur le cercle change l'heure de fin à chaque mouvement. */
@@ -173,13 +174,21 @@ export function useTimer() {
       sets: clampSets(patch.sets ?? current.sets),
     };
     if (next.seconds === current.seconds && next.sets === current.sets) return;
+    // Les références sont mises à jour tout de suite : un « GO » juste après (saisie encore en cours dans un champ) part avec la nouvelle valeur.
+    const fresh = initialState(next);
+    configRef.current = next;
+    stateRef.current = fresh;
     setConfig(next);
-    setState(initialState(next));
+    setState(fresh);
     void saveConfig(next);
   }, []);
 
   /** Appui sur le chrono : « GO » lance une série (ou une nouvelle partie si tout est fini) ; pendant le décompte, il la termine. */
   const press = useCallback(() => {
+    // Un champ (durée, séries) encore en cours de saisie : sa valeur est enregistrée d'abord, c'est elle qui est prise en compte.
+    // Si le chrono tournait, ce changement l'a remis à zéro : l'appui lance alors la série avec la nouvelle valeur.
+    commitPendingEdits();
+    Keyboard.dismiss(); // le clavier se ferme : le cadran est de nouveau entièrement visible
     const s = stateRef.current;
     const cfg = configRef.current;
     if (s.phase === 'running') {
