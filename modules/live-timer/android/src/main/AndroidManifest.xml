@@ -1,3 +1,21 @@
-<manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Service au premier plan : garde le compte à rebours affiché et l'app en vie pendant une série (aucun accès à Internet). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <!-- Permet de demander (une fenêtre du système) que le téléphone ne coupe pas l'app en arrière-plan. -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+  <application>
+    <service
+      android:name="expo.modules.livetimer.TimerService"
+      android:exported="false"
+      android:foregroundServiceType="specialUse">
+      <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="Chronomètre de séries : affiche le compte à rebours pendant l'entraînement" />
+    </service>
+    <receiver
+      android:name="expo.modules.livetimer.EndReceiver"
+      android:exported="false" />
+  </application>
 </manifest>

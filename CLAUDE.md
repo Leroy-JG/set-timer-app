@@ -27,17 +27,26 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - **Sons dans l'app** (si « Son » activé) : court son au « GO » (`go.wav`), à la fin de série (`end.wav`, aussi à l'appui sur le chrono), arpège à la dernière (`final.wav`). Générés par `node scripts/make-sounds.mjs`
   (`assets/sounds/`, ≈ 70 Ko) ; lus par `expo-audio` (`src/ui/sound.ts`, mode silencieux de l'iPhone respecté, musique de la salle seulement baissée : `duckOthers`) ; sur le web, mêmes notes en Web Audio (`sound.web.ts`).
   La fin naturelle vibre aussi (`alert.ts`). Aucun signal si l'app est rouverte plus de 3 s après l'heure de fin.
-- **Hors de l'app** (arrière-plan, écran verrouillé, app tuée) : notification système + vibration + son du téléphone (vibreur = vibration seule). Elle est **programmée auprès du système dès le Go** (`expo-notifications`,
-  déclencheur `DATE`, canal `set-end` importance MAX). **Au premier plan, la notification s'affiche aussi** (handler : bandeau + liste **avec** le son et la vibration du système) quand le bouton « Notifs » est actif ; l'app ne vibre alors pas en plus
-  (deux vibrations superposées) et ne joue que son bip si « Son » est actif. **Piège (cause du « pas de notif » en 1.2.1)** : avec `shouldPlaySound: false`, `expo-notifications` rend la notification *silencieuse* (`setSilent`) sur Android → ni bandeau,
-  ni son, ni vibration, juste une ligne discrète dans la barre. Ne jamais remettre `false` (gardé par `src/notifications.test.ts`).
-  Replanifiée (anti-rebond 200 ms) quand on déplace l'horloge, annulée à l'appui sur le chrono / au changement de réglage / bouton « Notifs » coupé, **jamais annulée à 00:00 naturel** (course avec l'alarme).
-- **Compte à rebours en direct (Android, 1.3.0)** : dès le « Go » (si « Notifs » actif et autorisation accordée), une notification **ongoing** affiche le temps restant qui défile dans la barre / sur l'écran verrouillé, même app fermée.
-  C'est le système qui anime le chrono (`setUsesChronometer` + `setChronometerCountDown`, `when` = heure de fin) : aucun JS ne tourne, aucune permission de plus, pas de service au premier plan. Module natif local `modules/live-timer`
-  (Kotlin, API Expo Modules, lié tout seul : dossier `modules/`), canal discret `set-live` (importance LOW, sans son ni vibration), id 4242 ; retirée toute seule à l'heure de fin (`setTimeoutAfter`), à l'appui sur le chrono,
-  au changement de réglage ou si « Notifs » est coupé ; mise à jour (même id) quand on déplace l'horloge ; toucher la notification rouvre l'app. Enveloppe JS : `src/liveTimer.ts` (`requireOptionalNativeModule`, sans effet sur Expo Go / iPhone / web ;
-  `liveTimer.web.ts` = vide). Appelée par `useTimer` avec la notification de fin (même anti-rebond). Limite : l'heure s'affiche dans l'en-tête de la notification (petit sur Android 12+), pas en gros chiffres.
-  **`dismissAllNotificationsAsync` est interdit** : sur Android il fait `cancelAll()` et effacerait aussi ce compte à rebours (on retire seulement `set-end`).
+- **Hors de l'app** (arrière-plan, écran verrouillé, app tuée) — **Android (APK)** : une **alarme native** (`AlarmManager`, module `modules/live-timer`) est armée dès le Go ; à 00:00 son récepteur (`EndReceiver`) affiche la
+  notification de fin (bandeau + son + vibration du canal `set-end`, catégorie *alarme*), **même si l'app a été fermée par le système et qu'on soit ou non dans l'app**. Alarme exacte si le téléphone l'autorise, sinon
+  `setAlarmClock` (reste exacte, sans autorisation). Hors Android natif (Expo Go, iPhone) ou si l'alarme native échoue : **repli** sur la notification programmée d'`expo-notifications` (`scheduleSetEnd`, déclencheur `DATE`, canal `set-end`
+  importance MAX) — c'est `startLiveTimer()` qui renvoie `false` ; `useTimer` programme alors celle d'expo.
+  Quand la notification de fin s'affiche (« Notifs » actif, autorisation accordée), l'app ne vibre pas en plus (deux vibrations superposées) et ne joue que son bip si « Son » est actif.
+  **Piège (cause du « pas de notif » en 1.2.1 au premier plan)** : avec `shouldPlaySound: false`, `expo-notifications` rend la notification *silencieuse* (`setSilent`) sur Android → ni bandeau, ni son, ni vibration. Ne jamais remettre
+  `false` dans le handler (gardé par `src/notifications.test.ts`).
+  Replanifiée (anti-rebond 200 ms) quand on déplace l'horloge, annulée à l'appui sur le chrono / au changement de réglage / bouton « Notifs » coupé, **jamais annulée à 00:00 naturel** (course avec l'alarme : `cancelSystemAlerts` n'est
+  appelé que pour une série arrêtée avant l'heure).
+- **Compte à rebours persistant + service (Android, 1.3.0)** : dès le « Go » (si « Notifs » actif et autorisation accordée), un **service au premier plan** (`TimerService`, type `specialUse`) affiche une notification
+  **persistante** (`ongoing`) avec le temps restant qui défile dans la barre / sur l'écran verrouillé. C'est le système qui anime le chrono (`setUsesChronometer` + `setChronometerCountDown`, `when` = heure de fin) : aucun JS ne tourne.
+  Tant que le service tourne, Android ne ferme pas l'app en arrière-plan (réponse au « pas de notif hors de l'app »). Il s'arrête à l'alarme de fin (`EndReceiver`), à l'arrêt de la série, ou seul 15 s après l'heure de fin (sécurité).
+  Si Android refuse le service : même notification affichée sans service (`notifyLive`, retirée à l'heure de fin par `setTimeoutAfter`) ; l'alarme reste armée. Canal discret `set-live` (importance LOW), ids 4242 (compte à rebours) / 4243 (fin).
+  Module natif local `modules/live-timer` (Kotlin, API Expo Modules, lié tout seul : dossier `modules/`, **pas** de `package.json`) : `LiveTimerModule` (pont JS : `start / stop / isBackgroundUnrestricted / requestBackgroundUnrestricted`), `TimerNotifications`
+  (alarme, notifications, canaux), `TimerService`, `EndReceiver`, `AndroidManifest.xml` (service, récepteur, permissions). Enveloppe JS : `src/liveTimer.ts` (`requireOptionalNativeModule`, sans effet sur Expo Go / iPhone / web ; `liveTimer.web.ts` = vide).
+  **Autorisations demandées à l'utilisateur** : notifications (fenêtre du système au premier Go, existant) et **« rester actif en arrière-plan »** (exemption d'économie de batterie, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`) : une ligne cliquable sous les
+  trois boutons (`useBackgroundRestricted`, relue au retour dans l'app) ouvre la fenêtre du système ; masquée jusqu'au prochain lancement une fois touchée. Permissions ajoutées (toutes sans accès à Internet) : `FOREGROUND_SERVICE`,
+  `FOREGROUND_SERVICE_SPECIAL_USE`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (liste blanche du workflow mise à jour ; le workflow vérifie aussi que le service et le récepteur sont dans l'APK final).
+  Limite : l'heure s'affiche dans l'en-tête de la notification (petit sur Android 12+), pas en gros chiffres.
+  **`dismissAllNotificationsAsync` est interdit** : sur Android il fait `cancelAll()` et effacerait aussi le compte à rebours (on retire seulement `set-end`).
 - **Exactitude Android** : sans `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`, `expo-notifications` retombe sur `setAndAllowWhileIdle` (retard possible de plusieurs minutes en Doze) →
   les deux permissions sont déclarées. Elles n'ouvrent aucun accès à Internet.
 - **Robustesse (demande explicite : jamais d'arrêt, jamais de chrono qui saute à 0)** : décompte calculé depuis l'heure de fin (`endAt`), pas en comptant les tops ; l'état du chrono est
@@ -67,14 +76,14 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - `src/ui/useTimer.ts` : état, minuteur à la seconde, AppState, keep-awake, enregistrement, alertes, programmation des notifications, préférences ; `components.tsx` : `Ring` (geste = `PanResponder`, centre mesuré
   à l'avance car un appui très bref se termine avant la fin d'une mesure), `Dashes`, `SettingsCard`, `ToggleButton` ; `Water.tsx` : l'eau ; `alert.ts` + `sound(.web).ts` : sons et vibration ; `Backdrop.tsx` : halos.
 - `src/notifications.ts` (téléphone) / `notifications.web.ts` (PWA) : même API (`scheduleSetEnd`, `cancelSetEnd`, `requestNotificationPermission`, `useNotificationStatus`…).
-- `modules/live-timer/` : module natif Android local (compte à rebours en direct, voir plus haut) ; `src/liveTimer.ts` (enveloppe) / `liveTimer.web.ts` (vide). Compilé seulement par le workflow APK (pas de SDK Android dans le cloud : `dl.google.com` refusé).
+- `modules/live-timer/` : module natif Android local (alarme de fin, service et compte à rebours, voir plus haut) ; `src/liveTimer.ts` (enveloppe) / `liveTimer.web.ts` (vide). Compilé seulement par le workflow APK (pas de SDK Android dans le cloud : `dl.google.com` refusé).
 - `src/storage.ts` : réglages et état du chrono. `app/index.tsx` : l'écran. `app/_layout.tsx` : polices, thème.
 - Web : `public/` (manifest, `sw.js` hors ligne + clic de notification, icônes), CSP `connect-src 'none'` dans `public/index.html`. Icônes : `node scripts/make-icons.mjs` (9 fichiers dont `assets/notification-icon.png`, silhouette blanche Android ; Playwright).
 
 ## Distribution
 - PWA sur GitHub Pages : `.github/workflows/pages.yml` (sur push `main`) ; Pages est activé (Source : GitHub Actions) et le déploiement de la 1.2.1 a réussi (run 36851186626). Adresse attendue : `https://leroy-jg.github.io/set-timer-app/` (non ouverte depuis le cloud, proxy).
 - APK Android : `.github/workflows/android-apk.yml` (à la main ou tag `v*`) → artefact `Binkam-apk` (`Binkam.apk`). Contrôles : manifeste (INTERNET retiré, `allowBackup=false`) puis APK final (`aapt2`,
-  **liste blanche de permissions** : POST_NOTIFICATIONS, VIBRATE, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, MODIFY_AUDIO_SETTINGS (expo-audio), SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM). Signé avec la clé de debug publique
+  **liste blanche de permissions** : POST_NOTIFICATIONS, VIBRATE, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, MODIFY_AUDIO_SETTINGS (expo-audio), SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM, FOREGROUND_SERVICE, FOREGROUND_SERVICE_SPECIAL_USE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS). Signé avec la clé de debug publique
   du modèle Expo sauf si les 4 secrets `ANDROID_*` existent (`scripts/sign-release.py`). Livrer : incrémenter `version` ET `android.versionCode`.
 
 ## Avancement
@@ -88,10 +97,11 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
       tirets pleine largeur, sons départ / fin dans l'app, trois boutons (son, notifs, écran allumé), eau dans le cadran, allègement (voir « Légèreté »). 28 tests unitaires ; parcours Chromium complet
       (GO, arrêt, réglages en cours de décompte, tirets, 99:59 sur une ligne, boutons mémorisés, clic au quart du cercle = 1:30, rechargement en décompte).
 - [x] v1.2.1 (`versionCode` 3) : la notification de fin s'affiche aussi quand l'app est au premier plan (si « Notifs » actif) ; bip + vibration inchangés.
-- [x] v1.3.0 (`versionCode` 4) : **correctif** de la notification au premier plan (elle était silencieuse, voir « Piège ») + **compte à rebours en direct** dans la barre de notifications (module natif `modules/live-timer`). 32 tests ;
-      export web OK ; `expo prebuild` : le module est lié (classe `expo.modules.livetimer.LiveTimerModule`), icône `notification_icon` générée, permissions inchangées. **Kotlin non compilé localement** : à valider par le build CI de la branche.
+- [x] v1.3.0 (`versionCode` 4) : retour utilisateur « les notifs n'arrivent pas quand je suis sur un autre écran » (APK) → **alarme native + service au premier plan + compte à rebours persistant** (module `modules/live-timer`) et demande d'exemption
+      de batterie ; **correctif** de la notification au premier plan (elle était silencieuse, voir « Piège »). 37 tests ; export web OK ; `expo prebuild` : le module est lié (classe `expo.modules.livetimer.LiveTimerModule`), icône `notification_icon` générée.
+      **Kotlin non compilé localement** (pas de SDK Android dans le cloud) : validé par le build CI de la branche.
 - [ ] **Jamais exécuté sur téléphone** : notifications programmées, sons `expo-audio` (fichiers WAV), vibration, canal Android, demande d'autorisation, keep-awake, AsyncStorage natif, clavier numérique,
-      geste au doigt sur le cercle, animation native de l'eau, **compte à rebours en direct** (module Kotlin), bandeau de fin au premier plan
+      geste au doigt sur le cercle, animation native de l'eau, **alarme native + service + compte à rebours** (module Kotlin), bandeau de fin au premier plan, demande d'exemption de batterie
 - [ ] Idées : son perso (plugin `expo-notifications` `sounds`, à tester sur téléphone), enchaînement automatique, presets de durée, annuler un appui involontaire sur le chrono, R8 pour alléger encore l'APK (à tester sur téléphone)
 
 ## Notes techniques

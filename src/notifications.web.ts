@@ -4,6 +4,7 @@
  * Sur iPhone, les notifications ne fonctionnent que pour une PWA ajoutée à l'écran d'accueil.
  */
 import { useSyncExternalStore } from 'react';
+import { setDoneBody } from './domain/messages';
 
 export type NotificationStatus = 'unknown' | 'granted' | 'denied';
 
@@ -56,7 +57,7 @@ export function openNotificationSettings() {}
 export function showSetDoneNotification(setNumber: number, sets: number) {
   try {
     if (status !== 'granted') return;
-    const body = setNumber >= sets ? 'Dernière série terminée. Bravo !' : `Série ${setNumber} sur ${sets} terminée. À toi de jouer !`;
+    const body = setDoneBody(setNumber, sets);
     const options = { body, icon: 'icon-192.png', tag: 'set-end', renotify: true, vibrate: [300, 150, 300] } as NotificationOptions;
     void navigator.serviceWorker?.ready
       .then((reg) => reg.showNotification('Binkām', options))

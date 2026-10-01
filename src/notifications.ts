@@ -1,5 +1,6 @@
 /**
- * Notification de fin de série (téléphone) : programmée auprès du système dès le « Go », donc elle sonne et vibre
+ * Notification de fin de série par `expo-notifications` : sur Android c'est le SECOURS de l'alarme native (`liveTimer.ts`, qui prévient
+ * même app fermée) ; sans module natif (Expo Go, iPhone) c'est elle qui prévient. Programmée auprès du système dès le « Go », donc elle sonne et vibre
  * même si l'app est en arrière-plan, l'écran verrouillé, ou si le système a fermé l'app pour libérer de la mémoire.
  * Le son et la vibration suivent les réglages du téléphone (mode vibreur = vibration seule, mode silencieux = rien).
  * Quand l'app est au premier plan, elle s'affiche de la même façon (bandeau, son et vibration du téléphone) : il ne faut surtout pas
@@ -9,6 +10,7 @@
 import * as Notifications from 'expo-notifications';
 import { Linking, Platform } from 'react-native';
 import { useSyncExternalStore } from 'react';
+import { setDoneBody } from './domain/messages';
 
 const CHANNEL = 'set-end';
 const ID = 'set-end';
@@ -93,7 +95,7 @@ export function scheduleSetEnd(endAt: number, setNumber: number, sets: number) {
       identifier: ID,
       content: {
         title: TITLE,
-        body: setNumber >= sets ? 'Dernière série terminée. Bravo !' : `Série ${setNumber} sur ${sets} terminée. À toi de jouer !`,
+        body: setDoneBody(setNumber, sets),
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX,
       },

@@ -1,6 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Platform } from 'react-native';
+import { liveTitle, setDoneBody } from '../domain/messages';
 import { DEFAULT_PREFS, type Prefs } from '../domain/prefs';
 import {
   clampSeconds,
@@ -25,7 +26,7 @@ import {
   showSetDoneNotification,
   useNotificationStatus,
 } from '../notifications';
-import { hideLiveTimer, showLiveTimer } from '../liveTimer';
+import { startLiveTimer, stopLiveTimer } from '../liveTimer';
 import { loadConfig, loadPrefs, loadTimer, saveConfig, savePrefs, saveTimer } from '../storage';
 import { alertSetDone, alertStart, prepareSound } from './alert';
 
@@ -34,6 +35,12 @@ const KEEP_AWAKE_TAG = 'set-timer';
 const SCHEDULE_DEBOUNCE_MS = 200;
 /** Une fin de série constatée plus de 3 s après l'heure prévue (app rouverte longtemps après) ne déclenche plus de signal. */
 const STALE_MS = 3000;
+
+/** La série s'arrête avant l'heure (appui sur le chrono, réglage modifié…) : plus d'alarme ni de notification pour elle. */
+function cancelSystemAlerts() {
+  cancelSetEnd();
+  stopLiveTimer();
+}
 
 export function useTimer() {
   const [config, setConfig] = useState<TimerConfig>(DEFAULT_CONFIG);
@@ -128,34 +135,32 @@ export function useTimer() {
         alertSetDone(final, prefsRef.current.sound, !systemAlerts);
         if (prefsRef.current.notifications) showSetDoneNotification(state.completed, configRef.current.sets);
       } else if (late < -250) {
-        // appui sur le chrono : on annule la notification et on confirme par le son
-        cancelSetEnd();
+        // appui sur le chrono : on annule l'alarme et les notifications, et on confirme par le son
+        cancelSystemAlerts();
         alertSetDone(final, prefsRef.current.sound, false);
       }
     } else {
-      cancelSetEnd();
+      cancelSystemAlerts();
     }
   }, [ready, state]);
 
-  // Notifications système (déplacées si on bouge l'horloge ; retirées si le bouton est désactivé ou si le décompte s'arrête) :
-  // la notification de fin de série (programmée à l'heure de fin) et, dès le « Go », le compte à rebours qui défile dans la barre.
+  // Alarme de fin + compte à rebours dans la barre (déplacés si on bouge l'horloge ; retirés si le bouton est désactivé). Quand le
+  // décompte se termine naturellement on ne touche à rien : l'alarme est en train de prévenir (course avec 00:00).
   useEffect(() => {
-    if (!ready) return;
-    if (state.phase !== 'running' || state.endAt === null) {
-      hideLiveTimer();
-      return;
-    }
+    if (!ready || state.phase !== 'running' || state.endAt === null) return;
     const end = state.endAt;
     const setNumber = state.completed + 1;
     const sets = config.sets;
     cancelSetEnd(); // l'ancienne heure n'est plus bonne
     if (!prefs.notifications) {
-      hideLiveTimer();
+      stopLiveTimer();
       return;
     }
     const id = setTimeout(() => {
-      scheduleSetEnd(end, setNumber, sets);
-      showLiveTimer(end, `Série ${setNumber} sur ${sets}`, 'Chrono en cours · touche pour revenir à l’app');
+      // Alarme native (même app fermée) + compte à rebours persistant ; si elle n'est pas disponible (Expo Go, iPhone, autorisation
+      // pas encore accordée), la notification programmée d'expo-notifications prend le relais.
+      const armed = startLiveTimer(end, liveTitle(setNumber, sets), 'Chrono en cours · touchez pour revenir à l’app', 'Binkām', setDoneBody(setNumber, sets));
+      if (!armed) scheduleSetEnd(end, setNumber, sets);
     }, SCHEDULE_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [ready, state.phase, state.endAt, state.completed, config.sets, notificationStatus, prefs.notifications]);
