@@ -11,6 +11,7 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
@@ -37,17 +38,22 @@ internal object TimerNotifications {
 
   private const val REQUEST_ALARM = 1
   private const val REQUEST_OPEN = 2
+  private const val REQUEST_DISMISS = 3
   private val VIBRATION = longArrayOf(0, 500, 250, 500)
 
   // même couleur que le fond de marque (#5C2E8A)
   private val BRAND_COLOR: Int = 0xFF5C2E8A.toInt()
 
-  /** Canaux : le compte à rebours est discret (ni son ni vibration), la fin de série est insistante. */
+  /**
+   * Canaux : le compte à rebours est silencieux (ni son ni vibration) mais d'importance « par défaut », pas « basse » : ainsi il
+   * apparaît tout en haut du volet de notifications, avec son icône dans la barre d'état, et reste sur l'écran verrouillé même si
+   * l'utilisateur a masqué les notifications silencieuses. La fin de série est insistante (bandeau, son, vibration).
+   */
   fun ensureChannels(context: Context) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
     val manager = context.getSystemService(NotificationManager::class.java) ?: return
     if (manager.getNotificationChannel(CHANNEL_LIVE) == null) {
-      val live = NotificationChannel(CHANNEL_LIVE, "Chrono en cours", NotificationManager.IMPORTANCE_LOW)
+      val live = NotificationChannel(CHANNEL_LIVE, "Chrono en cours", NotificationManager.IMPORTANCE_DEFAULT)
       live.description = "Affiche le temps restant de la série pendant le décompte"
       live.setShowBadge(false)
       live.enableVibration(false)
@@ -102,11 +108,20 @@ internal object TimerNotifications {
       .setChronometerCountDown(true)
       .setOngoing(true)
       .setOnlyAlertOnce(true)
-      .setPriority(NotificationCompat.PRIORITY_LOW)
+      .setPriority(NotificationCompat.PRIORITY_DEFAULT)
       .setCategory(NotificationCompat.CATEGORY_PROGRESS)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
       // Android 12+ retarde de 10 s l'affichage d'une notification de service au premier plan, sauf si on le demande
       .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+      // Si l'utilisateur la balaie (Android 14+ le permet même pour un service), elle est republiée tant que la série dure.
+      .setDeleteIntent(
+        PendingIntent.getBroadcast(
+          context, REQUEST_DISMISS, Intent(context, LiveDismissReceiver::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+      )
+      // Android 16 « Live Updates » : le temps restant s'affiche aussi dans la barre d'état et en tête de l'écran verrouillé
+      // (sans effet sur les versions précédentes).
+      .addExtras(Bundle().apply { putBoolean("android.requestPromotedOngoing", true) })
     val remaining = endAt - System.currentTimeMillis()
     if (timeout && remaining > 0) builder.setTimeoutAfter(remaining)
     openIntent(context)?.let { builder.setContentIntent(it) }
@@ -182,5 +197,31 @@ internal object TimerNotifications {
       manager.cancel(existing)
       existing.cancel()
     }
+  }
+}
+
+/** Série en cours (mémorisée pour republier le compte à rebours si l'utilisateur le balaie, même si l'app n'est plus en mémoire). */
+internal object TimerState {
+  private const val PREFS = "binkam_live_timer"
+
+  class Running(val endAt: Long, val title: String, val text: String)
+
+  fun save(context: Context, endAt: Long, title: String, text: String) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+      .putLong(TimerNotifications.EXTRA_END_AT, endAt)
+      .putString(TimerNotifications.EXTRA_TITLE, title)
+      .putString(TimerNotifications.EXTRA_TEXT, text)
+      .apply()
+  }
+
+  fun clear(context: Context) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+  }
+
+  fun read(context: Context): Running? {
+    val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val endAt = prefs.getLong(TimerNotifications.EXTRA_END_AT, 0L)
+    if (endAt <= 0L) return null
+    return Running(endAt, prefs.getString(TimerNotifications.EXTRA_TITLE, null) ?: "Binkām", prefs.getString(TimerNotifications.EXTRA_TEXT, null) ?: "Chrono en cours")
   }
 }

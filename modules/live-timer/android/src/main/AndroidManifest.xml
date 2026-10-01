@@ -2,6 +2,8 @@
   <!-- Service au premier plan : garde le compte à rebours affiché et l'app en vie pendant une série (aucun accès à Internet). -->
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+  <!-- Android 16 « Live Updates » : affiche le temps restant dans la barre d'état (sans effet avant). -->
+  <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
   <!-- Permet de demander (une fenêtre du système) que le téléphone ne coupe pas l'app en arrière-plan. -->
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
@@ -16,6 +18,9 @@
     </service>
     <receiver
       android:name="expo.modules.livetimer.EndReceiver"
+      android:exported="false" />
+    <receiver
+      android:name="expo.modules.livetimer.LiveDismissReceiver"
       android:exported="false" />
   </application>
 </manifest>

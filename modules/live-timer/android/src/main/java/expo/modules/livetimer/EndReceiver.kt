@@ -17,6 +17,7 @@ class EndReceiver : BroadcastReceiver() {
       // rien d'autre à tenter : l'app vibre et sonne de son côté si elle est ouverte
     }
     try {
+      TimerState.clear(context)
       context.stopService(Intent(context, TimerService::class.java))
       TimerNotifications.cancelLive(context)
     } catch (e: Exception) {

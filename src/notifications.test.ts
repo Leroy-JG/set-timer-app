@@ -39,13 +39,14 @@ describe('notifications Android', () => {
     expect(manifest).toContain('expo.modules.livetimer.TimerService');
     expect(manifest).toContain('android:foregroundServiceType="specialUse"');
     expect(manifest).toContain('expo.modules.livetimer.EndReceiver');
+    expect(manifest).toContain('expo.modules.livetimer.LiveDismissReceiver');
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_SPECIAL_USE');
     expect(manifest).not.toContain('android.permission.INTERNET');
   });
 
   it("les permissions du module natif sont autorisées explicitement par le workflow de l'APK (liste blanche)", () => {
     const workflow = read('.github/workflows/android-apk.yml');
-    for (const p of ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_SPECIAL_USE', 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS']) {
+    for (const p of ['FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_SPECIAL_USE', 'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS', 'POST_PROMOTED_NOTIFICATIONS']) {
       expect(workflow).toContain(` android.permission.${p} `);
     }
   });
@@ -54,5 +55,13 @@ describe('notifications Android', () => {
     const config = JSON.parse(read('modules/live-timer/expo-module.config.json'));
     expect(config.platforms).toEqual(['android']);
     expect(config.android.modules).toEqual(['expo.modules.livetimer.LiveTimerModule']);
+  });
+
+  it("le test de bout en bout sur émulateur existe et couvre l'écran verrouillé, le volet, le Doze et l'arrêt", () => {
+    const script = read('scripts/e2e-android.sh');
+    for (const needle of ['locksettings set-pin', 'expand-notifications', 'deviceidle force-idle', 'Terminer la série', 'channel=set-live', 'channel=set-end']) {
+      expect(script).toContain(needle);
+    }
+    expect(read('.github/workflows/android-e2e.yml')).toContain('android-emulator-runner');
   });
 });

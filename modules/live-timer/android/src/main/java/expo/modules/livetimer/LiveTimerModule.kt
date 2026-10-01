@@ -52,6 +52,7 @@ class LiveTimerModule : Module() {
       TimerNotifications.cancelDone(context) // la notification de fin de la série précédente
       // 1) l'alarme de fin : c'est elle qui prévient, quoi qu'il arrive à l'app
       if (!TimerNotifications.arm(context, endAt, endTitle, endText)) return false
+      TimerState.save(context, endAt, title, text)
       // 2) le compte à rebours persistant (service au premier plan ; à défaut, notification simple)
       val intent = Intent(context, TimerService::class.java)
         .putExtra(TimerNotifications.EXTRA_END_AT, endAt)
@@ -72,6 +73,7 @@ class LiveTimerModule : Module() {
   private fun stop() {
     try {
       val context = applicationContext ?: return
+      TimerState.clear(context)
       TimerNotifications.cancelAlarm(context)
       context.stopService(Intent(context, TimerService::class.java))
       TimerNotifications.cancelLive(context)

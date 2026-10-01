@@ -101,7 +101,7 @@ jobs:
           fi
           # Liste blanche : toute permission qui n'est pas ici fait échouer le build (une dépendance qui en ajouterait une
           # doit être un choix explicite : la bloquer dans app.json > android.blockedPermissions, ou l'autoriser ici ET dans PRIVACY.md).
-          ALLOWED=" android.permission.POST_NOTIFICATIONS android.permission.VIBRATE android.permission.RECEIVE_BOOT_COMPLETED android.permission.ACCESS_NETWORK_STATE android.permission.WAKE_LOCK android.permission.MODIFY_AUDIO_SETTINGS android.permission.SCHEDULE_EXACT_ALARM android.permission.USE_EXACT_ALARM android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS com.binkam.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION "
+          ALLOWED=" android.permission.POST_NOTIFICATIONS android.permission.VIBRATE android.permission.RECEIVE_BOOT_COMPLETED android.permission.ACCESS_NETWORK_STATE android.permission.WAKE_LOCK android.permission.MODIFY_AUDIO_SETTINGS android.permission.SCHEDULE_EXACT_ALARM android.permission.USE_EXACT_ALARM android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS android.permission.POST_PROMOTED_NOTIFICATIONS com.binkam.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION "
           BAD=0
           for p in $("$AAPT2" dump permissions Binkam.apk | sed -n "s/^uses-permission[^:]*: name='\([^']*\)'.*/\1/p"); do
             case "$ALLOWED" in
@@ -112,7 +112,7 @@ jobs:
           [ "$BAD" = 0 ] || exit 1
           # Le module natif du chrono (service au premier plan + récepteur de l'alarme de fin) doit bien être dans l'APK final.
           TREE=$("$AAPT2" dump xmltree --file AndroidManifest.xml Binkam.apk)
-          for c in expo.modules.livetimer.TimerService expo.modules.livetimer.EndReceiver; do
+          for c in expo.modules.livetimer.TimerService expo.modules.livetimer.EndReceiver expo.modules.livetimer.LiveDismissReceiver; do
             echo "$TREE" | grep -q "$c" || { echo "::error::Composant absent de l'APK : $c"; exit 1; }
           done
           echo "$TREE" | grep -q foregroundServiceType || { echo "::error::Le service du chrono n'a pas de type de service au premier plan."; exit 1; }
