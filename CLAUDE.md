@@ -62,7 +62,7 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - Web : `public/` (manifest, `sw.js` hors ligne + clic de notification, icônes), CSP `connect-src 'none'` dans `public/index.html`. Icônes : `node scripts/make-icons.mjs` (9 fichiers dont `assets/notification-icon.png`, silhouette blanche Android ; Playwright).
 
 ## Distribution
-- PWA sur GitHub Pages : `.github/workflows/pages.yml` (sur push `main`) — **à activer** : Réglages → Pages → Source : GitHub Actions.
+- PWA sur GitHub Pages : `.github/workflows/pages.yml` (sur push `main`) ; Pages est activé (Source : GitHub Actions) et le déploiement de la 1.2.1 a réussi (run 36851186626). Adresse attendue : `https://leroy-jg.github.io/set-timer-app/` (non ouverte depuis le cloud, proxy).
 - APK Android : `.github/workflows/android-apk.yml` (à la main ou tag `v*`) → artefact `Binkam-apk` (`Binkam.apk`). Contrôles : manifeste (INTERNET retiré, `allowBackup=false`) puis APK final (`aapt2`,
   **liste blanche de permissions** : POST_NOTIFICATIONS, VIBRATE, RECEIVE_BOOT_COMPLETED, WAKE_LOCK, ACCESS_NETWORK_STATE, MODIFY_AUDIO_SETTINGS (expo-audio), SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM). Signé avec la clé de debug publique
   du modèle Expo sauf si les 4 secrets `ANDROID_*` existent (`scripts/sign-release.py`). Livrer : incrémenter `version` ET `android.versionCode`.
