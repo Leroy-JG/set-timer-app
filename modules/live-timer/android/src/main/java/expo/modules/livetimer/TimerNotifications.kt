@@ -15,7 +15,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 
 /**
- * Tout ce qui touche au système Android pour une série : l'alarme de fin, la notification de fin (bandeau + son + vibration)
+ * Tout ce qui touche au système Android pour une série : la minuterie de fin, la notification de fin (bandeau + son + vibration)
  * et la notification « compte à rebours » (chronomètre à rebours animé par le système lui-même).
  * Rien ici ne dépend de React Native : l'alarme sonne même si l'app a été fermée par le système.
  */
@@ -119,7 +119,11 @@ internal object TimerNotifications {
     NotificationManagerCompat.from(context).notify(ID_LIVE, buildLive(context, endAt, title, text, timeout = true))
   }
 
-  /** Notification de fin de série : bandeau, son et vibration du téléphone (catégorie « alarme » : passe aussi le mode Ne pas déranger). */
+  /**
+   * Notification de fin de série : une notification ordinaire (bandeau, son de notification et vibration du téléphone), pas une sonnerie
+   * de réveil. Pas de catégorie « alarme » : le mode Ne pas déranger la fait taire comme les autres. Elle est relayée sur les montres
+   * connectées (Wear OS, Galaxy Watch, Garmin…) comme toute notification : on ne la garde surtout pas « locale ».
+   */
   @SuppressLint("MissingPermission")
   fun postDone(context: Context, title: String, text: String) {
     ensureChannels(context)
@@ -128,9 +132,9 @@ internal object TimerNotifications {
       .setColor(BRAND_COLOR)
       .setContentTitle(title)
       .setContentText(text)
-      .setPriority(NotificationCompat.PRIORITY_MAX)
-      .setCategory(NotificationCompat.CATEGORY_ALARM)
+      .setPriority(NotificationCompat.PRIORITY_HIGH)
       .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+      .setLocalOnly(false)
       .setAutoCancel(true)
       // avant Android 8, le son et la vibration se règlent ici ; ensuite c'est le canal qui décide
       .setDefaults(NotificationCompat.DEFAULT_SOUND)
@@ -146,8 +150,9 @@ internal object TimerNotifications {
   private fun alarmIntent(context: Context): Intent = Intent(context, EndReceiver::class.java)
 
   /**
-   * Arme l'alarme de fin de série. Alarme exacte si le téléphone l'autorise ; sinon une « alarme de réveil », qui reste exacte et
-   * n'est pas retardée par les économies d'énergie (elle n'a besoin d'aucune autorisation). Renvoie false si rien n'a pu être armé.
+   * Programme le réveil du téléphone à l'heure de fin de série (minuterie du système, invisible : ce n'est PAS une alarme de réveil,
+   * aucune icône d'alarme ni sonnerie). Exacte si le téléphone l'autorise (USE_EXACT_ALARM est accordée à l'installation),
+   * sinon la plus précise possible. Renvoie false si rien n'a pu être programmé.
    */
   fun arm(context: Context, endAt: Long, endTitle: String, endText: String): Boolean {
     val manager = context.getSystemService(AlarmManager::class.java) ?: return false
@@ -157,7 +162,7 @@ internal object TimerNotifications {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || manager.canScheduleExactAlarms()) {
         manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, operation)
       } else {
-        manager.setAlarmClock(AlarmManager.AlarmClockInfo(endAt, openIntent(context)), operation)
+        manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, endAt, operation)
       }
       true
     } catch (e: SecurityException) {

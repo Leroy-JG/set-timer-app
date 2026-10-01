@@ -27,9 +27,10 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - **Sons dans l'app** (si « Son » activé) : court son au « GO » (`go.wav`), à la fin de série (`end.wav`, aussi à l'appui sur le chrono), arpège à la dernière (`final.wav`). Générés par `node scripts/make-sounds.mjs`
   (`assets/sounds/`, ≈ 70 Ko) ; lus par `expo-audio` (`src/ui/sound.ts`, mode silencieux de l'iPhone respecté, musique de la salle seulement baissée : `duckOthers`) ; sur le web, mêmes notes en Web Audio (`sound.web.ts`).
   La fin naturelle vibre aussi (`alert.ts`). Aucun signal si l'app est rouverte plus de 3 s après l'heure de fin.
-- **Hors de l'app** (arrière-plan, écran verrouillé, app tuée) — **Android (APK)** : une **alarme native** (`AlarmManager`, module `modules/live-timer`) est armée dès le Go ; à 00:00 son récepteur (`EndReceiver`) affiche la
-  notification de fin (bandeau + son + vibration du canal `set-end`, catégorie *alarme*), **même si l'app a été fermée par le système et qu'on soit ou non dans l'app**. Alarme exacte si le téléphone l'autorise, sinon
-  `setAlarmClock` (reste exacte, sans autorisation). Hors Android natif (Expo Go, iPhone) ou si l'alarme native échoue : **repli** sur la notification programmée d'`expo-notifications` (`scheduleSetEnd`, déclencheur `DATE`, canal `set-end`
+- **Hors de l'app** (arrière-plan, écran verrouillé, app tuée) — **Android (APK)** : une **minuterie native** (`AlarmManager` exact, module `modules/live-timer`) est programmée dès le Go ; à 00:00 son récepteur (`EndReceiver`) affiche
+  la notification de fin : **une notification ordinaire** (bandeau + son de notification + vibration du canal `set-end`), **même si l'app a été fermée par le système et qu'on soit ou non dans l'app**.
+  **Décision utilisateur : ce n'est PAS une alarme de réveil** → jamais `setAlarmClock` (icône d'alarme / « prochain réveil »), jamais `CATEGORY_ALARM` ni `USAGE_ALARM` (sonnerie de réveil, passe le mode Ne pas déranger) — gardé par
+  `src/notifications.test.ts`. Exacte (`USE_EXACT_ALARM` est accordée à l'installation), sinon `setAndAllowWhileIdle`. Hors Android natif (Expo Go, iPhone) ou si l'alarme native échoue : **repli** sur la notification programmée d'`expo-notifications` (`scheduleSetEnd`, déclencheur `DATE`, canal `set-end`
   importance MAX) — c'est `startLiveTimer()` qui renvoie `false` ; `useTimer` programme alors celle d'expo.
   Quand la notification de fin s'affiche (« Notifs » actif, autorisation accordée), l'app ne vibre pas en plus (deux vibrations superposées) et ne joue que son bip si « Son » est actif.
   **Piège (cause du « pas de notif » en 1.2.1 au premier plan)** : avec `shouldPlaySound: false`, `expo-notifications` rend la notification *silencieuse* (`setSilent`) sur Android → ni bandeau, ni son, ni vibration. Ne jamais remettre
@@ -47,6 +48,10 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
   `FOREGROUND_SERVICE_SPECIAL_USE`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` (liste blanche du workflow mise à jour ; le workflow vérifie aussi que le service et le récepteur sont dans l'APK final).
   Limite : l'heure s'affiche dans l'en-tête de la notification (petit sur Android 12+), pas en gros chiffres.
   **`dismissAllNotificationsAsync` est interdit** : sur Android il fait `cancelAll()` et effacerait aussi le compte à rebours (on retire seulement `set-end`).
+- **Montres connectées (demande utilisateur)** : pas de connexion Bluetooth propre à l'app (ce serait une app montre à part). Android relaie **toutes les notifications ordinaires** vers la montre appairée (Wear OS, Galaxy Watch, Garmin, Fitbit,
+  Xiaomi, Huawei… via leur app compagnon). La notification de fin n'est donc **jamais `localOnly`** (`setLocalOnly(false)`) et vibre ; le compte à rebours (`ongoing`, importance LOW, silencieux) est relayé ou non selon la montre. Côté utilisateur :
+  autoriser « Binkām » dans les notifications de l'app compagnon de la montre ; par défaut beaucoup de montres ne reçoivent les notifications que quand l'écran du téléphone est éteint / verrouillé. **Jamais testé sur une montre.**
+  Idée non faite : boutons d'action « Terminer / GO » dans la notification (utilisables depuis la montre), qui demandent de piloter l'état du chrono (JS) depuis le natif.
 - **Exactitude Android** : sans `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`, `expo-notifications` retombe sur `setAndAllowWhileIdle` (retard possible de plusieurs minutes en Doze) →
   les deux permissions sont déclarées. Elles n'ouvrent aucun accès à Internet.
 - **Robustesse (demande explicite : jamais d'arrêt, jamais de chrono qui saute à 0)** : décompte calculé depuis l'heure de fin (`endAt`), pas en comptant les tops ; l'état du chrono est

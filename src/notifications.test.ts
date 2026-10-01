@@ -23,11 +23,14 @@ describe('notifications Android', () => {
     }
   });
 
-  it("l'alarme de fin est exacte (ou « alarme de réveil » sans autorisation) et la notification de fin est insistante", () => {
+  it("la fin de série est une notification ordinaire (pas une sonnerie de réveil), relayée sur les montres connectées", () => {
     const kotlin = read(`${KOTLIN}/TimerNotifications.kt`);
     expect(kotlin).toContain('setExactAndAllowWhileIdle');
-    expect(kotlin).toContain('setAlarmClock');
-    expect(kotlin).toContain('NotificationCompat.CATEGORY_ALARM');
+    expect(kotlin).toContain('setLocalOnly(false)');
+    // « alarme de réveil » (icône d'alarme, prochain réveil affiché) et catégorie « alarme » (passe le mode Ne pas déranger) : refusés par l'utilisateur
+    expect(kotlin).not.toContain('setAlarmClock');
+    expect(kotlin).not.toContain('CATEGORY_ALARM');
+    expect(kotlin).not.toContain('USAGE_ALARM');
     expect(read(`${KOTLIN}/EndReceiver.kt`)).toContain('postDone');
   });
 
