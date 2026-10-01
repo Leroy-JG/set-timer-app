@@ -136,6 +136,18 @@ ui() {
   return 1
 }
 
+# ui_system NOM : comme ui, mais refait l'export tant que l'interface du système (volet / écran verrouillé) est absente de l'arbre
+# (uiautomator renvoie parfois un arbre vide pendant l'animation d'ouverture du volet)
+ui_system() {
+  local n
+  for n in 1 2 3 4 5; do
+    ui "$1"
+    if ui_has "$OUT/$1.xml" '.' >/dev/null; then return 0; fi
+    sleep 2
+  done
+  return 1
+}
+
 shot() { adb exec-out screencap -p >"$OUT/$1.png" 2>/dev/null; }
 notifs() { a dumpsys notification --noredact >"$OUT/$1.txt" 2>&1; }
 
@@ -277,7 +289,7 @@ step "3. Volet de notifications (on tire depuis le haut de l'écran)"
 a cmd statusbar expand-notifications
 sleep 2
 shot 03-volet
-ui shade
+ui_system shade
 ui_texts "$OUT/shade.xml" | tee -a "$OUT/summary.txt"
 if ui_has "$OUT/shade.xml" "Série 1 sur 4" >/dev/null; then pass "le titre « Série 1 sur 4 » est visible dans le volet"; else fail "le compte à rebours n'est pas visible dans le volet (voir 03-volet.png)"; fi
 if T=$(ui_has "$OUT/shade.xml" '^[0-9]{1,2}:[0-9]{2}$'); then
@@ -305,7 +317,7 @@ sleep 3
 shot 05-ecran-verrouille
 KG=$(a dumpsys window 2>/dev/null | grep -Eo 'mShowingLockscreen=[a-z]+|isKeyguardShowing=[a-z]+|mKeyguardShowing=[a-z]+' | head -2 | tr '\n' ' ')
 say "   écran de verrouillage : $KG"
-ui lock
+ui_system lock
 ui_texts "$OUT/lock.xml" | tee -a "$OUT/summary.txt"
 if ui_has "$OUT/lock.xml" "Série 1 sur 4" >/dev/null; then
   pass "le titre « Série 1 sur 4 » est visible sur l'écran verrouillé"
@@ -351,7 +363,7 @@ fi
 assert_no_notif "$OUT/after-end.txt" 4242 "le compte à rebours a disparu à la fin de la série"
 service_state >"$OUT/services-after-end.txt"
 if grep -q "TimerService" "$OUT/services-after-end.txt"; then fail "TimerService tourne encore après la fin"; else pass "TimerService est arrêté après la fin"; fi
-ui lock-end
+ui_system lock-end
 ui_has "$OUT/lock-end.xml" "Série 1 sur 4 terminée" >/dev/null && pass "la notification de fin est lisible sur l'écran verrouillé" || warn "texte de fin non repéré sur l'écran verrouillé (voir 06-ecran-verrouille-apres-fin.png)"
 
 step "7. Retour dans l'app"
@@ -405,7 +417,7 @@ tap_center # GO (série 4)
 sleep 4
 a cmd statusbar expand-notifications
 sleep 2
-if ui shade2 && out=$(bounds "$OUT/shade2.xml" text "Série 4 sur 4" com.android.systemui); then
+if ui_system shade2 && out=$(bounds "$OUT/shade2.xml" text "Série 4 sur 4" com.android.systemui); then
   read -r RX RY RW _ <<<"$out"
   a input swipe $((RX + RW / 3)) "$RY" $((RX - RW)) "$RY" 200
   sleep 3
