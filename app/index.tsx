@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatTime, remainingFraction } from '../src/domain/timer';
+import { requestBackgroundUnrestricted, useBackgroundRestricted } from '../src/liveTimer';
 import { openNotificationSettings, useNotificationStatus } from '../src/notifications';
 import { Backdrop, type Tone } from '../src/ui/Backdrop';
 import { Dashes, Ring, SettingsCard, ToggleButton } from '../src/ui/components';
@@ -14,6 +15,13 @@ export default function TimerScreen() {
   const { width, height } = useWindowDimensions();
   const { config, state, prefs, ready, update, press, seekTo, setPref } = useTimer();
   const notifications = useNotificationStatus();
+  // Android : l'économie de batterie peut couper l'app en arrière-plan ; on propose (une fois par lancement) de l'autoriser à rester active.
+  const backgroundRestricted = useBackgroundRestricted();
+  const [backgroundAsked, setBackgroundAsked] = useState(false);
+  const askBackground = useCallback(() => {
+    setBackgroundAsked(true);
+    requestBackgroundUnrestricted();
+  }, []);
 
   const onSound = useCallback((v: boolean) => setPref('sound', v), [setPref]);
   const onNotifications = useCallback((v: boolean) => setPref('notifications', v), [setPref]);
@@ -115,7 +123,7 @@ export default function TimerScreen() {
 
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 26 }}>
             <ToggleButton label="Son dans l’app" caption="Son" icon="sound" on={prefs.sound} onToggle={onSound} />
-            <ToggleButton label="Notifications de fin de série" caption="Notifs" icon="bell" on={prefs.notifications} onToggle={onNotifications} />
+            <ToggleButton label="Notifications : chrono en direct et fin de série" caption="Notifs" icon="bell" on={prefs.notifications} onToggle={onNotifications} />
             <ToggleButton label="Écran toujours allumé" caption="Écran" icon="sun" on={prefs.awake} onToggle={onAwake} />
           </View>
 
@@ -123,6 +131,12 @@ export default function TimerScreen() {
             <Pressable accessibilityRole="link" onPress={openNotificationSettings}>
               <Text style={{ color: theme.error, fontFamily: FONT.semibold, fontSize: 13, textAlign: 'center', maxWidth: 290, lineHeight: 18 }}>
                 Notifications désactivées : le téléphone ne sonnera pas en arrière-plan. Touchez ici pour les activer.
+              </Text>
+            </Pressable>
+          ) : Platform.OS !== 'web' && prefs.notifications && backgroundRestricted && !backgroundAsked ? (
+            <Pressable accessibilityRole="link" onPress={askBackground}>
+              <Text style={{ color: theme.text, fontFamily: FONT.semibold, fontSize: 13, textAlign: 'center', maxWidth: 290, lineHeight: 18, textDecorationLine: 'underline' }}>
+                Pour que le chrono continue quand vous quittez l’app, touchez ici puis « Autoriser ».
               </Text>
             </Pressable>
           ) : null}

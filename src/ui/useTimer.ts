@@ -1,6 +1,7 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Keyboard, Platform } from 'react-native';
+import { liveTitle, setDoneBody } from '../domain/messages';
 import { DEFAULT_PREFS, type Prefs } from '../domain/prefs';
 import {
   clampSeconds,
@@ -25,14 +26,22 @@ import {
   showSetDoneNotification,
   useNotificationStatus,
 } from '../notifications';
+import { startLiveTimer, stopLiveTimer } from '../liveTimer';
 import { loadConfig, loadPrefs, loadTimer, saveConfig, savePrefs, saveTimer } from '../storage';
 import { alertSetDone, alertStart, prepareSound } from './alert';
+import { commitPendingEdits } from './pendingEdit';
 
 const KEEP_AWAKE_TAG = 'set-timer';
 /** Délai avant de programmer la notification : un glissement sur le cercle change l'heure de fin à chaque mouvement. */
 const SCHEDULE_DEBOUNCE_MS = 200;
 /** Une fin de série constatée plus de 3 s après l'heure prévue (app rouverte longtemps après) ne déclenche plus de signal. */
 const STALE_MS = 3000;
+
+/** La série s'arrête avant l'heure (appui sur le chrono, réglage modifié…) : plus d'alarme ni de notification pour elle. */
+function cancelSystemAlerts() {
+  cancelSetEnd();
+  stopLiveTimer();
+}
 
 export function useTimer() {
   const [config, setConfig] = useState<TimerConfig>(DEFAULT_CONFIG);
@@ -47,6 +56,8 @@ export function useTimer() {
   prefsRef.current = prefs;
   const prevRef = useRef(state);
   const notificationStatus = useNotificationStatus();
+  const notificationStatusRef = useRef(notificationStatus);
+  notificationStatusRef.current = notificationStatus;
 
   // Au lancement : réglages et chrono enregistrés. Si le système avait fermé l'app pendant un décompte, il reprend là où il en est
   // (l'heure de fin est enregistrée) ; si elle est passée entre-temps, la série est comptée.
@@ -119,28 +130,39 @@ export function useTimer() {
       const late = Date.now() - prev.endAt;
       const final = state.phase === 'done';
       if (late >= -250 && late < STALE_MS) {
-        // fin naturelle, constatée à l'heure prévue
-        alertSetDone(final, prefsRef.current.sound, true);
+        // fin naturelle, constatée à l'heure prévue. Sur téléphone, la notification (bandeau + son + vibration du système) prévient
+        // déjà : l'app ne vibre pas en plus (deux vibrations superposées), elle ne joue que son bip si « Son » est actif.
+        const systemAlerts = Platform.OS !== 'web' && prefsRef.current.notifications && notificationStatusRef.current === 'granted';
+        alertSetDone(final, prefsRef.current.sound, !systemAlerts);
         if (prefsRef.current.notifications) showSetDoneNotification(state.completed, configRef.current.sets);
       } else if (late < -250) {
-        // appui sur le chrono : on annule la notification et on confirme par le son
-        cancelSetEnd();
+        // appui sur le chrono : on annule l'alarme et les notifications, et on confirme par le son
+        cancelSystemAlerts();
         alertSetDone(final, prefsRef.current.sound, false);
       }
     } else {
-      cancelSetEnd();
+      cancelSystemAlerts();
     }
   }, [ready, state]);
 
-  // Notification système à l'heure de fin (déplacée si on bouge l'horloge ; retirée si le bouton est désactivé).
+  // Alarme de fin + compte à rebours dans la barre (déplacés si on bouge l'horloge ; retirés si le bouton est désactivé). Quand le
+  // décompte se termine naturellement on ne touche à rien : l'alarme est en train de prévenir (course avec 00:00).
   useEffect(() => {
     if (!ready || state.phase !== 'running' || state.endAt === null) return;
     const end = state.endAt;
     const setNumber = state.completed + 1;
     const sets = config.sets;
     cancelSetEnd(); // l'ancienne heure n'est plus bonne
-    if (!prefs.notifications) return;
-    const id = setTimeout(() => scheduleSetEnd(end, setNumber, sets), SCHEDULE_DEBOUNCE_MS);
+    if (!prefs.notifications) {
+      stopLiveTimer();
+      return;
+    }
+    const id = setTimeout(() => {
+      // Alarme native (même app fermée) + compte à rebours persistant ; si elle n'est pas disponible (Expo Go, iPhone, autorisation
+      // pas encore accordée), la notification programmée d'expo-notifications prend le relais.
+      const armed = startLiveTimer(end, liveTitle(setNumber, sets), 'Chrono en cours · touchez pour revenir à l’app', 'Binkām', setDoneBody(setNumber, sets));
+      if (!armed) scheduleSetEnd(end, setNumber, sets);
+    }, SCHEDULE_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [ready, state.phase, state.endAt, state.completed, config.sets, notificationStatus, prefs.notifications]);
 
@@ -152,13 +174,21 @@ export function useTimer() {
       sets: clampSets(patch.sets ?? current.sets),
     };
     if (next.seconds === current.seconds && next.sets === current.sets) return;
+    // Les références sont mises à jour tout de suite : un « GO » juste après (saisie encore en cours dans un champ) part avec la nouvelle valeur.
+    const fresh = initialState(next);
+    configRef.current = next;
+    stateRef.current = fresh;
     setConfig(next);
-    setState(initialState(next));
+    setState(fresh);
     void saveConfig(next);
   }, []);
 
   /** Appui sur le chrono : « GO » lance une série (ou une nouvelle partie si tout est fini) ; pendant le décompte, il la termine. */
   const press = useCallback(() => {
+    // Un champ (durée, séries) encore en cours de saisie : sa valeur est enregistrée d'abord, c'est elle qui est prise en compte.
+    // Si le chrono tournait, ce changement l'a remis à zéro : l'appui lance alors la série avec la nouvelle valeur.
+    commitPendingEdits();
+    Keyboard.dismiss(); // le clavier se ferme : le cadran est de nouveau entièrement visible
     const s = stateRef.current;
     const cfg = configRef.current;
     if (s.phase === 'running') {

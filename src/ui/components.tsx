@@ -2,6 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } f
 import { PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { angleFraction, unwrapFraction } from '../domain/timer';
+import { digitsToSeconds, formatDigits, formatDuration, typedDigits } from '../domain/timeEntry';
+import { setPendingEdit } from './pendingEdit';
 import { FONT, useTheme } from './theme';
 import { Water } from './Water';
 
@@ -330,37 +332,57 @@ function StepButton({ sign, onPress, label }: { sign: '−' | '+'; onPress: () =
   );
 }
 
-/** Champ numérique : on tape, la valeur est validée (bornée) quand on quitte le champ. */
+/**
+ * Champ numérique (nombre de séries) : on tape, la valeur est validée (bornée) quand on quitte le champ — ou quand on appuie sur « GO »
+ * alors qu'on est encore dedans (voir `pendingEdit`).
+ */
 function NumberField({
   value,
   onCommit,
   label,
-  pad,
   width = 56,
 }: {
   value: number;
   onCommit: (n: number) => void;
   label: string;
-  pad?: boolean;
   width?: number;
 }) {
   const theme = useTheme();
-  const shown = pad ? String(value).padStart(2, '0') : String(value);
+  const shown = String(value);
   const [text, setText] = useState(shown);
   const [focused, setFocused] = useState(false);
+  const textRef = useRef(text);
+  textRef.current = text;
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const inputRef = useRef<TextInput>(null);
   useEffect(() => {
     if (!focused) setText(shown);
   }, [shown, focused]);
 
-  const commit = () => {
+  const commit = useCallback(() => {
     setFocused(false);
-    const n = parseInt(text, 10);
-    if (Number.isFinite(n)) onCommit(n);
-    else setText(shown);
-  };
+    const n = parseInt(textRef.current, 10);
+    if (Number.isFinite(n)) onCommitRef.current(n);
+    else setText(shownRef.current);
+  }, []);
+
+  // Saisie non validée : « GO » la valide avant de lancer le chrono.
+  const dirty = focused && text !== shown;
+  useEffect(() => {
+    if (!dirty) return;
+    setPendingEdit(label, () => {
+      commit();
+      inputRef.current?.blur();
+    });
+    return () => setPendingEdit(label, null);
+  }, [dirty, label, commit]);
 
   return (
     <TextInput
+      ref={inputRef}
       accessibilityLabel={label}
       value={text}
       onChangeText={(v) => setText(v.replace(/\D/g, '').slice(0, 2))}
@@ -376,6 +398,89 @@ function NumberField({
   );
 }
 
+/**
+ * Durée « MM:SS » saisie chiffre après chiffre, comme sur un four à micro-ondes : on tape 0 1 3 0 et ça donne 01:30 (voir `timeEntry`).
+ * Le champ de saisie est invisible et posé sur l'affichage ; le premier chiffre tapé remplace l'ancienne durée. Validée en quittant le champ,
+ * avec la touche « OK » — ou quand on appuie sur « GO » alors qu'on est encore dedans (voir `pendingEdit`).
+ */
+function TimeField({ seconds, onCommit }: { seconds: number; onCommit: (seconds: number) => void }) {
+  const theme = useTheme();
+  const [entry, setEntry] = useState<string | null>(null); // chiffres tapés ; null = rien tapé depuis le focus
+  const [focused, setFocused] = useState(false);
+  const entryRef = useRef<string | null>(null);
+  const onCommitRef = useRef(onCommit);
+  onCommitRef.current = onCommit;
+  const inputRef = useRef<TextInput>(null);
+
+  const typed = entry ?? '';
+  const shown = entry === null ? formatDuration(seconds) : formatDigits(entry);
+
+  const commit = useCallback(() => {
+    const typedNow = entryRef.current;
+    entryRef.current = null;
+    setEntry(null);
+    setFocused(false);
+    if (typedNow) onCommitRef.current(digitsToSeconds(typedNow));
+  }, []);
+
+  // Chiffres non validés : « GO » les valide avant de lancer le chrono.
+  const dirty = !!entry;
+  useEffect(() => {
+    if (!dirty) return;
+    setPendingEdit('time', () => {
+      commit();
+      inputRef.current?.blur();
+    });
+    return () => setPendingEdit('time', null);
+  }, [dirty, commit]);
+
+  const onChangeText = useCallback((text: string) => {
+    const digits = typedDigits(text);
+    entryRef.current = digits;
+    setEntry(digits);
+  }, []);
+
+  return (
+    <View
+      style={{
+        width: 128,
+        height: 46,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderBottomWidth: 2,
+        borderBottomColor: focused ? theme.action : 'transparent',
+      }}
+    >
+      <Text
+        style={{
+          color: focused && entry === null ? theme.muted : theme.text,
+          fontFamily: FONT.bold,
+          fontSize: 30,
+          fontVariant: ['lining-nums', 'tabular-nums'],
+          letterSpacing: 1,
+        }}
+      >
+        {shown}
+      </Text>
+      <TextInput
+        ref={inputRef}
+        accessibilityLabel="Durée, minutes et secondes"
+        accessibilityValue={{ text: shown }}
+        value={typed}
+        onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        keyboardType="number-pad"
+        returnKeyType="done"
+        caretHidden
+        selection={{ start: typed.length, end: typed.length }}
+        style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, opacity: 0 }}
+      />
+    </View>
+  );
+}
+
 /** Durée et nombre de séries : modifiables à tout moment (changer l'un ou l'autre remet le chrono à zéro). */
 export const SettingsCard = memo(function SettingsCard({
   seconds,
@@ -387,17 +492,13 @@ export const SettingsCard = memo(function SettingsCard({
   onChange: (patch: { seconds?: number; sets?: number }) => void;
 }) {
   const theme = useTheme();
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
   return (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <View style={styles.row}>
         <Text style={[styles.label, { color: theme.muted, fontFamily: FONT.semibold }]}>Durée</Text>
         <View style={styles.control}>
           <StepButton sign="−" label="Durée −5 secondes" onPress={() => onChange({ seconds: seconds - 5 })} />
-          <NumberField value={minutes} label="Minutes" pad onCommit={(m) => onChange({ seconds: m * 60 + secs })} />
-          <Text style={[styles.colon, { color: theme.muted, fontFamily: FONT.bold }]}>:</Text>
-          <NumberField value={secs} label="Secondes" pad onCommit={(s) => onChange({ seconds: minutes * 60 + Math.min(s, 59) })} />
+          <TimeField seconds={seconds} onCommit={(s) => onChange({ seconds: s })} />
           <StepButton sign="+" label="Durée +5 secondes" onPress={() => onChange({ seconds: seconds + 5 })} />
         </View>
       </View>
@@ -423,5 +524,4 @@ const styles = StyleSheet.create({
   label: { fontSize: 15, letterSpacing: 0.4 },
   control: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   field: { fontSize: 26, textAlign: 'center', paddingVertical: 4, paddingHorizontal: 0 },
-  colon: { fontSize: 24, marginHorizontal: -2 },
 });

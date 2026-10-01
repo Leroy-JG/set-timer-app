@@ -1,13 +1,16 @@
 /**
- * Notification de fin de série (téléphone) : programmée auprès du système dès le « Go », donc elle sonne et vibre
+ * Notification de fin de série par `expo-notifications` : sur Android c'est le SECOURS de l'alarme native (`liveTimer.ts`, qui prévient
+ * même app fermée) ; sans module natif (Expo Go, iPhone) c'est elle qui prévient. Programmée auprès du système dès le « Go », donc elle sonne et vibre
  * même si l'app est en arrière-plan, l'écran verrouillé, ou si le système a fermé l'app pour libérer de la mémoire.
  * Le son et la vibration suivent les réglages du téléphone (mode vibreur = vibration seule, mode silencieux = rien).
- * Quand l'app est au premier plan, la notification s'affiche aussi (bandeau) ; le son et la vibration y restent ceux de l'app
- * (bouton « Son » pour le bip), pour ne pas doubler le signal.
+ * Quand l'app est au premier plan, elle s'affiche de la même façon (bandeau, son et vibration du téléphone) : il ne faut surtout pas
+ * lui retirer le son, car `expo-notifications` la rend alors « silencieuse » (ni bandeau ni vibration, seulement une ligne discrète
+ * dans la barre). Dans ce cas l'app ne vibre pas elle-même (voir `useTimer`).
  */
 import * as Notifications from 'expo-notifications';
 import { Linking, Platform } from 'react-native';
 import { useSyncExternalStore } from 'react';
+import { setDoneBody } from './domain/messages';
 
 const CHANNEL = 'set-end';
 const ID = 'set-end';
@@ -41,10 +44,10 @@ let hasScheduled = false;
 
 export async function setupNotifications(): Promise<void> {
   try {
-    // App au premier plan : la notification s'affiche quand même (elle n'est programmée que si le bouton est activé) ;
-    // le système ne la sonne pas, c'est l'app qui joue son bip et vibre.
+    // App au premier plan : la notification s'affiche quand même (elle n'est programmée que si le bouton est activé), avec bandeau,
+    // son et vibration. Avec `shouldPlaySound: false`, Android la présente en « silencieux » (aucun bandeau) : on ne le met pas.
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
+      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
     });
     if (Platform.OS === 'android') {
       // Le canal doit exister avant la demande d'autorisation (Android 13+).
@@ -92,7 +95,7 @@ export function scheduleSetEnd(endAt: number, setNumber: number, sets: number) {
       identifier: ID,
       content: {
         title: TITLE,
-        body: setNumber >= sets ? 'Dernière série terminée. Bravo !' : `Série ${setNumber} sur ${sets} terminée. À toi de jouer !`,
+        body: setDoneBody(setNumber, sets),
         sound: 'default',
         priority: Notifications.AndroidNotificationPriority.MAX,
       },
@@ -107,9 +110,12 @@ export function cancelSetEnd() {
   enqueue(() => Notifications.cancelScheduledNotificationAsync(ID));
 }
 
-/** Retire de la barre de notifications celles des séries précédentes. */
+/**
+ * Retire de la barre la notification de fin de la série précédente.
+ * (Pas `dismissAllNotificationsAsync` : sur Android il retirerait aussi le compte à rebours en direct, voir `liveTimer.ts`.)
+ */
 export function dismissDelivered() {
-  enqueue(() => Notifications.dismissAllNotificationsAsync());
+  enqueue(() => Notifications.dismissNotificationAsync(ID));
 }
 
 /** Notifications refusées : ouvre les réglages du téléphone. */
