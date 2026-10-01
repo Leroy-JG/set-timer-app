@@ -118,7 +118,19 @@ ui() {
   local n
   for n in 1 2 3 4; do
     a uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-    if adb pull /sdcard/ui.xml "$OUT/$1.xml" >/dev/null 2>&1 && [ -s "$OUT/$1.xml" ]; then return 0; fi
+    if adb pull /sdcard/ui.xml "$OUT/$1.xml" >/dev/null 2>&1 && [ -s "$OUT/$1.xml" ]; then
+      # Fenêtre « … ne répond pas » de l'émulateur (souvent le lanceur, machine de CI lente) : on la ferme avec « Wait » / « Attendre »
+      if grep -q "isn't responding\|ne répond pas" "$OUT/$1.xml"; then
+        local w
+        if w=$(bounds "$OUT/$1.xml" text "Wait") || w=$(bounds "$OUT/$1.xml" text "Attendre"); then
+          read -r wx wy _ <<<"$w"
+          a input tap "$wx" "$wy"
+          sleep 2
+          continue
+        fi
+      fi
+      return 0
+    fi
     sleep 1
   done
   return 1
@@ -198,6 +210,7 @@ a settings put secure lock_screen_show_notifications 1
 a settings put secure lock_screen_allow_private_notifications 1
 a settings put global heads_up_notifications_enabled 1
 a svc power stayon false
+a settings put global hide_error_dialogs 1 # pas de fenêtre « ne répond pas » qui masque l'écran (les plantages restent dans logcat)
 a input keyevent 82
 adb install -r "$APK" >"$OUT/install.txt" 2>&1 && pass "APK installé" || { fail "installation de l'APK : $(tail -2 "$OUT/install.txt")"; exit 1; }
 a pm grant "$PKG" android.permission.POST_NOTIFICATIONS && say "autorisation de notifier accordée"
