@@ -28,7 +28,7 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
   (`assets/sounds/`, ≈ 70 Ko) ; lus par `expo-audio` (`src/ui/sound.ts`, mode silencieux de l'iPhone respecté, musique de la salle seulement baissée : `duckOthers`) ; sur le web, mêmes notes en Web Audio (`sound.web.ts`).
   La fin naturelle vibre aussi (`alert.ts`). Aucun signal si l'app est rouverte plus de 3 s après l'heure de fin.
 - **Hors de l'app** (arrière-plan, écran verrouillé, app tuée) : notification système + vibration + son du téléphone (vibreur = vibration seule). Elle est **programmée auprès du système dès le Go** (`expo-notifications`,
-  déclencheur `DATE`, canal `set-end` importance MAX). **Au premier plan, la notification est masquée** (handler : rien à afficher ni sonner) : c'est l'app qui signale (sons + vibration), pour éviter un double signal.
+  déclencheur `DATE`, canal `set-end` importance MAX). **Au premier plan, la notification s'affiche aussi** (handler : bandeau + liste, sans son système) quand le bouton « Notifs » est actif ; le bip et la vibration restent ceux de l'app, pour éviter un double signal.
   Replanifiée (anti-rebond 200 ms) quand on déplace l'horloge, annulée à l'appui sur le chrono / au changement de réglage / bouton « Notifs » coupé, **jamais annulée à 00:00 naturel** (course avec l'alarme).
 - **Exactitude Android** : sans `SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM`, `expo-notifications` retombe sur `setAndAllowWhileIdle` (retard possible de plusieurs minutes en Doze) →
   les deux permissions sont déclarées. Elles n'ouvrent aucun accès à Internet.
@@ -38,7 +38,7 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - **Légèreté (demande explicite)** : l'écran ne se redessine qu'**une fois par seconde** (minuteur aligné sur le changement de seconde, plus d'intervalle de 100 ms) ; le cercle se redessine **seul** (`useFraction`
   dans `Ring`, ≈ un demi-degré par image, 33–250 ms) et l'eau par le pilote natif ; `Backdrop`, `SettingsCard`, `Dashes`, `ToggleButton`, `Water` sont mémoïsés ; 3 graisses de police au lieu de 5 ;
   APK : ARM seulement (pas de x86), modules GIF / WebP animé et inspecteur réseau désactivés (étape « Alléger l'APK » du workflow). Non fait volontairement : R8 / `minifyEnabled` (risque de crash au lancement impossible à tester sans téléphone).
-- Web / PWA : pas de programmation possible → sons + vibration dans la page ; notification via le service worker seulement si la page est cachée à 00:00 et la permission accordée
+- Web / PWA : pas de programmation possible → sons + vibration dans la page ; notification via le service worker à 00:00 (page visible ou cachée) si le bouton est actif et la permission accordée
   (meilleur effort ; sur iPhone, seulement PWA installée). **Pour des notifications fiables : l'APK Android.**
 
 ## Charte graphique (famille Alam)
@@ -77,6 +77,7 @@ Plus de bouton Démarrer / Pause / Réinitialiser, plus de texte d'aide (demande
 - [x] v1.2.0 (`versionCode` 2) : GO / arrêt au centre, plus de boutons Démarrer-Pause-Reset ni de texte d'aide, réglages modifiables en cours de route (= remise à zéro), cadran sur une seule ligne,
       tirets pleine largeur, sons départ / fin dans l'app, trois boutons (son, notifs, écran allumé), eau dans le cadran, allègement (voir « Légèreté »). 28 tests unitaires ; parcours Chromium complet
       (GO, arrêt, réglages en cours de décompte, tirets, 99:59 sur une ligne, boutons mémorisés, clic au quart du cercle = 1:30, rechargement en décompte).
+- [x] v1.2.1 (`versionCode` 3) : la notification de fin s'affiche aussi quand l'app est au premier plan (si « Notifs » actif) ; bip + vibration inchangés.
 - [ ] **Jamais exécuté sur téléphone** : notifications programmées, sons `expo-audio` (fichiers WAV), vibration, canal Android, demande d'autorisation, keep-awake, AsyncStorage natif, clavier numérique,
       geste au doigt sur le cercle, animation native de l'eau
 - [ ] Idées : son perso (plugin `expo-notifications` `sounds`, à tester sur téléphone), enchaînement automatique, presets de durée, annuler un appui involontaire sur le chrono, R8 pour alléger encore l'APK (à tester sur téléphone)
