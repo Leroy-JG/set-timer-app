@@ -6,10 +6,6 @@
 name: Test Android (émulateur)
 
 on:
-  # Tant que ce fichier n'est pas sur la branche par défaut, GitHub refuse de le lancer à la main : on le lance à chaque envoi
-  # sur la branche de travail (à retirer à la fusion dans main : il reste alors le lancement à la main).
-  push:
-    branches: [claude/blissful-fermat-i2v7ov]
   workflow_dispatch:
     inputs:
       api:
