@@ -115,7 +115,7 @@ export default function TimerScreen() {
 
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 26 }}>
             <ToggleButton label="Son dans l’app" caption="Son" icon="sound" on={prefs.sound} onToggle={onSound} />
-            <ToggleButton label="Notifications de fin de série" caption="Notifs" icon="bell" on={prefs.notifications} onToggle={onNotifications} />
+            <ToggleButton label="Notifications : chrono en direct et fin de série" caption="Notifs" icon="bell" on={prefs.notifications} onToggle={onNotifications} />
             <ToggleButton label="Écran toujours allumé" caption="Écran" icon="sun" on={prefs.awake} onToggle={onAwake} />
           </View>
 

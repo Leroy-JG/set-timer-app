@@ -1,6 +1,6 @@
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { DEFAULT_PREFS, type Prefs } from '../domain/prefs';
 import {
   clampSeconds,
@@ -25,6 +25,7 @@ import {
   showSetDoneNotification,
   useNotificationStatus,
 } from '../notifications';
+import { hideLiveTimer, showLiveTimer } from '../liveTimer';
 import { loadConfig, loadPrefs, loadTimer, saveConfig, savePrefs, saveTimer } from '../storage';
 import { alertSetDone, alertStart, prepareSound } from './alert';
 
@@ -47,6 +48,8 @@ export function useTimer() {
   prefsRef.current = prefs;
   const prevRef = useRef(state);
   const notificationStatus = useNotificationStatus();
+  const notificationStatusRef = useRef(notificationStatus);
+  notificationStatusRef.current = notificationStatus;
 
   // Au lancement : réglages et chrono enregistrés. Si le système avait fermé l'app pendant un décompte, il reprend là où il en est
   // (l'heure de fin est enregistrée) ; si elle est passée entre-temps, la série est comptée.
@@ -119,8 +122,10 @@ export function useTimer() {
       const late = Date.now() - prev.endAt;
       const final = state.phase === 'done';
       if (late >= -250 && late < STALE_MS) {
-        // fin naturelle, constatée à l'heure prévue
-        alertSetDone(final, prefsRef.current.sound, true);
+        // fin naturelle, constatée à l'heure prévue. Sur téléphone, la notification (bandeau + son + vibration du système) prévient
+        // déjà : l'app ne vibre pas en plus (deux vibrations superposées), elle ne joue que son bip si « Son » est actif.
+        const systemAlerts = Platform.OS !== 'web' && prefsRef.current.notifications && notificationStatusRef.current === 'granted';
+        alertSetDone(final, prefsRef.current.sound, !systemAlerts);
         if (prefsRef.current.notifications) showSetDoneNotification(state.completed, configRef.current.sets);
       } else if (late < -250) {
         // appui sur le chrono : on annule la notification et on confirme par le son
@@ -132,15 +137,26 @@ export function useTimer() {
     }
   }, [ready, state]);
 
-  // Notification système à l'heure de fin (déplacée si on bouge l'horloge ; retirée si le bouton est désactivé).
+  // Notifications système (déplacées si on bouge l'horloge ; retirées si le bouton est désactivé ou si le décompte s'arrête) :
+  // la notification de fin de série (programmée à l'heure de fin) et, dès le « Go », le compte à rebours qui défile dans la barre.
   useEffect(() => {
-    if (!ready || state.phase !== 'running' || state.endAt === null) return;
+    if (!ready) return;
+    if (state.phase !== 'running' || state.endAt === null) {
+      hideLiveTimer();
+      return;
+    }
     const end = state.endAt;
     const setNumber = state.completed + 1;
     const sets = config.sets;
     cancelSetEnd(); // l'ancienne heure n'est plus bonne
-    if (!prefs.notifications) return;
-    const id = setTimeout(() => scheduleSetEnd(end, setNumber, sets), SCHEDULE_DEBOUNCE_MS);
+    if (!prefs.notifications) {
+      hideLiveTimer();
+      return;
+    }
+    const id = setTimeout(() => {
+      scheduleSetEnd(end, setNumber, sets);
+      showLiveTimer(end, `Série ${setNumber} sur ${sets}`, 'Chrono en cours · touche pour revenir à l’app');
+    }, SCHEDULE_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [ready, state.phase, state.endAt, state.completed, config.sets, notificationStatus, prefs.notifications]);
 
