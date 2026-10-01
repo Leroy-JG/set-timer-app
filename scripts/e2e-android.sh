@@ -92,6 +92,27 @@ sys.exit(1)
 EOF
 }
 
+# ui_texts FICHIER_UI [PAQUET] : liste les textes / descriptions des nœuds du système (pour comprendre ce que l'écran montre vraiment)
+ui_texts() {
+  python3 - "$1" "${2:-com.android.systemui}" <<'EOF'
+import sys, xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except Exception as e:
+    print("   (dump illisible :", e, ")")
+    sys.exit(0)
+seen = []
+for n in root.iter("node"):
+    if n.attrib.get("package") != sys.argv[2]:
+        continue
+    for f in ("text", "content-desc"):
+        v = n.attrib.get(f, "").strip()
+        if v and v not in seen:
+            seen.append(v)
+print("   textes du système :", " | ".join(seen[:40]) if seen else "(aucun)")
+EOF
+}
+
 # ui NOM : exporte l'arbre d'accessibilité de l'écran dans $OUT/NOM.xml (quelques essais : l'écran bouge parfois)
 ui() {
   local n
@@ -207,8 +228,10 @@ notifs after-go
 assert_notif "$OUT/after-go.txt" 4242 "compte à rebours : chronomètre à rebours, silencieux, canal dédié" \
   "channel=set-live" "android.showChronometer=true" "android.chronometerCountDown=true" "Série 1 sur 4"
 BLOCK=$(notif_block "$OUT/after-go.txt" 4242)
+say "   extras de la notification : $(grep -E 'android\.(title|text|showChronometer|chronometerCountDown|showWhen|requestPromotedOngoing)|when=|usesChronometer|chronometer' <<<"$BLOCK" | tr -s ' ' | tr '\n' ';' | cut -c1-400)"
 say "   importance : $(grep -o 'importance=[0-9]*' <<<"$BLOCK" | head -1) ; flags : $(grep -o 'flags=0x[0-9a-f]*' <<<"$BLOCK" | head -1) ; visibilité : $(grep -o 'vis=[A-Z]*' <<<"$BLOCK" | head -1)"
-grep -q "ONGOING" <<<"$BLOCK" && pass "notification persistante (ONGOING)" || warn "drapeau ONGOING non repéré dans le dump (flags ci-dessus)"
+FL=$(grep -o 'flags=0x[0-9a-f]*' <<<"$BLOCK" | head -1 | cut -d= -f2)
+if [ -n "$FL" ] && [ $((FL & 2)) -ne 0 ]; then pass "notification persistante (drapeau ONGOING, flags=$FL)"; else warn "drapeau ONGOING absent (flags=${FL:-?})"; fi
 service_state >"$OUT/services-after-go.txt"
 if grep -q "TimerService" "$OUT/services-after-go.txt" && grep -q "isForeground=true" "$OUT/services-after-go.txt"; then
   pass "le service TimerService tourne au premier plan"
@@ -223,6 +246,7 @@ a cmd statusbar expand-notifications
 sleep 2
 shot 03-volet
 ui shade
+ui_texts "$OUT/shade.xml" | tee -a "$OUT/summary.txt"
 if ui_has "$OUT/shade.xml" "Série 1 sur 4" >/dev/null; then pass "le titre « Série 1 sur 4 » est visible dans le volet"; else fail "le compte à rebours n'est pas visible dans le volet (voir 03-volet.png)"; fi
 if T=$(ui_has "$OUT/shade.xml" '^[0-9]{1,2}:[0-9]{2}$'); then
   pass "un chronomètre (mm:ss) défile dans le volet : $T"
@@ -250,6 +274,7 @@ shot 05-ecran-verrouille
 KG=$(a dumpsys window 2>/dev/null | grep -Eo 'mShowingLockscreen=[a-z]+|isKeyguardShowing=[a-z]+|mKeyguardShowing=[a-z]+' | head -2 | tr '\n' ' ')
 say "   écran de verrouillage : $KG"
 ui lock
+ui_texts "$OUT/lock.xml" | tee -a "$OUT/summary.txt"
 if ui_has "$OUT/lock.xml" "Série 1 sur 4" >/dev/null; then
   pass "le titre « Série 1 sur 4 » est visible sur l'écran verrouillé"
 else
@@ -301,6 +326,8 @@ step "7. Retour dans l'app"
 unlock
 shot 07-app-apres-fin
 ui app-after-end
+ui_texts "$OUT/app-after-end.xml" "$PKG" | tee -a "$OUT/summary.txt"
+say "   fenêtre au premier plan : $(a dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus' | tr -d '\r')"
 grep -q "Série 2 sur 4" "$OUT/app-after-end.xml" 2>/dev/null && pass "l'app affiche « Série 2 sur 4 » (la série terminée est comptée)" || warn "« Série 2 sur 4 » non repéré (voir 07-app-apres-fin.png)"
 a cmd statusbar collapse >/dev/null 2>&1
 a am start -n "$PKG/.MainActivity" >/dev/null 2>&1
@@ -317,6 +344,8 @@ sleep 3
 notifs stopped
 assert_no_notif "$OUT/stopped.txt" 4242 "arrêt : le compte à rebours disparaît"
 assert_no_notif "$OUT/stopped.txt" 4243 "arrêt : pas de notification de fin"
+a dumpsys alarm >"$OUT/alarm-after-stop.txt" 2>&1
+grep -n "EndReceiver" "$OUT/alarm-after-stop.txt" | head -8 | sed 's/^/   alarm: /' | tee -a "$OUT/summary.txt"
 [ "$(alarm_state)" -eq 0 ] && pass "arrêt : la minuterie de fin est annulée" || fail "arrêt : la minuterie EndReceiver est toujours programmée"
 service_state | grep -q "TimerService" && fail "arrêt : TimerService tourne encore" || pass "arrêt : TimerService arrêté"
 
@@ -328,9 +357,13 @@ SIZE=$((GO_W * 100 / 72))
 TAP_X=$((GO_X - SIZE * 3 / 100))
 TAP_Y=$((GO_Y - SIZE * 45 / 100))
 say "   cercle ≈ ${SIZE}px, appui à ($TAP_X,$TAP_Y)"
+shot 09a-avant-appui-cercle
 a input tap "$TAP_X" "$TAP_Y"
 sleep 3
 shot 09-fin-au-premier-plan
+ui after-ring
+ui_texts "$OUT/after-ring.xml" "$PKG" | tee -a "$OUT/summary.txt"
+say "   fenêtre au premier plan : $(a dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus' | tr -d '\r')"
 notifs foreground-end
 assert_notif "$OUT/foreground-end.txt" 4243 "fin au premier plan : la notification de fin s'affiche aussi" "channel=set-end" "Série 3 sur 4 terminée"
 assert_no_notif "$OUT/foreground-end.txt" 4242 "fin au premier plan : le compte à rebours a disparu"
