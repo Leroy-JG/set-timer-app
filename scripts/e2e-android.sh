@@ -172,7 +172,13 @@ service_state() { a dumpsys activity services "$PKG" 2>/dev/null; }
 alarm_state() { a dumpsys alarm 2>/dev/null | awk '/^  (Recent problems|Top Alarms|Alarm Stats):/ {exit} /expo.modules.livetimer.EndReceiver/ {c++} END {print c+0}'; }
 
 wake_screen() { a input keyevent 224; sleep 1; }
-keyguard_showing() { a dumpsys window 2>/dev/null | grep -Eo 'isKeyguardShowing=[a-z]+' | head -1 | grep -q true; }
+# écran verrouillé = l'écran de verrouillage est affiché (dumpsys window en cite plusieurs fois l'état : un seul « true » suffit) ou la fenêtre
+# au premier plan est celle du système (volet / verrouillage)
+keyguard_showing() {
+  local d
+  d=$(a dumpsys window 2>/dev/null)
+  grep -q 'isKeyguardShowing=true' <<<"$d" || grep -E 'mCurrentFocus' <<<"$d" | grep -qE 'NotificationShade|Keyguard|Bouncer'
+}
 unlock() {
   local i
   for i in 1 2 3; do
@@ -183,11 +189,12 @@ unlock() {
     sleep 1
     a input keyevent 66
     sleep 3
-    keyguard_showing || return 0
+    if ! keyguard_showing; then a svc power stayon true; return 0; fi
   done
   # dernier recours (la sécurité de l'écran n'est pas ce qu'on teste ici) : on retire le code
   a locksettings clear --old "$PIN" >/dev/null 2>&1
   a wm dismiss-keyguard >/dev/null 2>&1
+  a svc power stayon true
   sleep 2
 }
 
