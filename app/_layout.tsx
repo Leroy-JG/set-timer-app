@@ -1,6 +1,4 @@
 import {
-  Raleway_400Regular,
-  Raleway_500Medium,
   Raleway_600SemiBold,
   Raleway_700Bold,
   Raleway_800ExtraBold,
@@ -40,8 +38,6 @@ function Themed() {
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    Raleway_400Regular,
-    Raleway_500Medium,
     Raleway_600SemiBold,
     Raleway_700Bold,
     Raleway_800ExtraBold,

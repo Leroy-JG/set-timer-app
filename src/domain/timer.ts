@@ -18,9 +18,9 @@ export const DEFAULT_CONFIG: TimerConfig = { seconds: 90, sets: 4 };
 
 /**
  * - `idle`    : en attente d'un « Go » (au tout début, ou entre deux séries : chrono à 00:00) ;
- * - `running` : décompte en cours ; `paused` : décompte suspendu ; `done` : toutes les séries sont faites.
+ * - `running` : décompte en cours ; `done` : toutes les séries sont faites.
  */
-export type Phase = 'idle' | 'running' | 'paused' | 'done';
+export type Phase = 'idle' | 'running' | 'done';
 
 export interface TimerState {
   phase: Phase;
@@ -67,7 +67,7 @@ export function sanitizeState(raw: unknown, config: TimerConfig): TimerState {
   const o = raw as Record<string, unknown>;
   const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const phase = o.phase;
-  if (phase !== 'idle' && phase !== 'running' && phase !== 'paused' && phase !== 'done') return fallback;
+  if (phase !== 'idle' && phase !== 'running' && phase !== 'done') return fallback;
   if (!isNum(o.completed) || !Number.isInteger(o.completed) || o.completed < 0 || o.completed > config.sets) return fallback;
   const completed = o.completed;
   if (phase === 'done') return completed === config.sets ? { phase, completed, remainingMs: 0, endAt: null } : fallback;
@@ -76,16 +76,8 @@ export function sanitizeState(raw: unknown, config: TimerConfig): TimerState {
     if (!isNum(o.endAt) || o.endAt <= 0) return fallback;
     return { phase, completed, remainingMs: clamp(isNum(o.remainingMs) ? o.remainingMs : 0, 0, totalMs(config)), endAt: o.endAt };
   }
-  if (!isNum(o.remainingMs)) return fallback;
-  const remainingMs = clamp(o.remainingMs, 0, totalMs(config));
-  // « paused » avec 00:00 n'a pas de sens ; « idle » = durée pleine au tout début, 00:00 entre deux séries
-  if (phase === 'paused') return remainingMs > 0 ? { phase, completed, remainingMs, endAt: null } : fallback;
+  // « idle » = durée pleine au tout début, 00:00 entre deux séries
   return { phase, completed, remainingMs: completed === 0 ? totalMs(config) : 0, endAt: null };
-}
-
-/** Les réglages ne se modifient qu'avant de commencer (après « Réinitialiser »). */
-export function canEdit(state: TimerState): boolean {
-  return state.phase === 'idle' && state.completed === 0;
 }
 
 /** En attente du « Go » d'une série suivante (chrono à 00:00, au moins une série faite). */
@@ -93,17 +85,11 @@ export function isWaitingNext(state: TimerState): boolean {
   return state.phase === 'idle' && state.completed > 0;
 }
 
+/** « Go » : une série repart toujours de la durée pleine. */
 export function start(state: TimerState, config: TimerConfig, now: number): TimerState {
   if (state.phase === 'running' || state.phase === 'done') return state;
-  const remainingMs = state.remainingMs > 0 ? state.remainingMs : totalMs(config);
+  const remainingMs = totalMs(config);
   return { ...state, phase: 'running', remainingMs, endAt: now + remainingMs };
-}
-
-export function pause(state: TimerState, config: TimerConfig, now: number): TimerState {
-  if (state.phase !== 'running' || state.endAt === null) return state;
-  const remaining = state.endAt - now;
-  if (remaining <= 0) return finishSet(state, config); // l'heure est passée entre deux tops d'horloge
-  return { ...state, phase: 'paused', remainingMs: Math.min(remaining, totalMs(config)), endAt: null };
 }
 
 /** Une série vient de se terminer (à 00:00 ou par appui sur le chrono) : on la compte et on attend le prochain « Go ». */
@@ -125,22 +111,22 @@ export function tick(state: TimerState, config: TimerConfig, now: number): Timer
   return finishSet(state, config);
 }
 
-/** Termine tout de suite la série en cours (chrono en marche ou en pause) : elle est comptée. */
+/** Termine tout de suite la série en cours : elle est comptée. */
 export function skip(state: TimerState, config: TimerConfig): TimerState {
-  if (state.phase !== 'running' && state.phase !== 'paused') return state;
+  if (state.phase !== 'running') return state;
   return finishSet(state, config);
 }
 
 /**
  * Déplace l'horloge : `elapsedFraction` (0–1) = part de la série déjà écoulée, comme sur le cercle
- * (un quart du cercle = un quart du temps écoulé). Fonctionne en marche et en pause.
+ * (un quart du cercle = un quart du temps écoulé). Seulement pendant un décompte.
  */
 export function seek(state: TimerState, config: TimerConfig, elapsedFraction: number, now: number): TimerState {
-  if (state.phase !== 'running' && state.phase !== 'paused') return state;
+  if (state.phase !== 'running' || state.endAt === null) return state;
   if (!Number.isFinite(elapsedFraction)) return state;
   const total = totalMs(config);
   const remainingMs = clamp(Math.round(total * (1 - clamp(elapsedFraction, 0, 1))), Math.min(MIN_SEEK_MS, total), total);
-  return state.phase === 'running' ? { ...state, remainingMs, endAt: now + remainingMs } : { ...state, remainingMs };
+  return { ...state, remainingMs, endAt: now + remainingMs };
 }
 
 /**

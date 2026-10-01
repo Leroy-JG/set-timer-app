@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { sanitizePrefs, type Prefs } from './domain/prefs';
 import { sanitizeConfig, type TimerConfig, type TimerState } from './domain/timer';
 
 const CONFIG_KEY = 'st:config:v1';
 const TIMER_KEY = 'st:timer:v1';
+const PREFS_KEY = 'st:prefs:v1';
 
 async function read(key: string): Promise<unknown> {
   try {
@@ -37,4 +39,12 @@ export function loadTimer(): Promise<unknown> {
 
 export function saveTimer(state: TimerState): Promise<void> {
   return write(TIMER_KEY, state);
+}
+
+export async function loadPrefs(): Promise<Prefs> {
+  return sanitizePrefs(await read(PREFS_KEY));
+}
+
+export function savePrefs(prefs: Prefs): Promise<void> {
+  return write(PREFS_KEY, prefs);
 }

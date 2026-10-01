@@ -2,6 +2,8 @@
  * Notification de fin de série (téléphone) : programmée auprès du système dès le « Go », donc elle sonne et vibre
  * même si l'app est en arrière-plan, l'écran verrouillé, ou si le système a fermé l'app pour libérer de la mémoire.
  * Le son et la vibration suivent les réglages du téléphone (mode vibreur = vibration seule, mode silencieux = rien).
+ * Quand l'app est au premier plan, la notification s'affiche aussi (bandeau) ; le son et la vibration y restent ceux de l'app
+ * (bouton « Son » pour le bip), pour ne pas doubler le signal.
  */
 import * as Notifications from 'expo-notifications';
 import { Linking, Platform } from 'react-native';
@@ -29,11 +31,6 @@ export function useNotificationStatus(): NotificationStatus {
   return useSyncExternalStore(subscribe, () => status, () => status);
 }
 
-/** Sur téléphone, la notification assure seule le son et la vibration (l'app n'en ajoute pas une deuxième couche). */
-export function notificationCoversAlert(): boolean {
-  return status === 'granted';
-}
-
 // Les appels au système sont exécutés un par un, dans l'ordre, et ne font jamais planter l'app.
 let queue: Promise<unknown> = Promise.resolve();
 function enqueue(task: () => Promise<unknown>) {
@@ -44,8 +41,10 @@ let hasScheduled = false;
 
 export async function setupNotifications(): Promise<void> {
   try {
+    // App au premier plan : la notification s'affiche quand même (elle n'est programmée que si le bouton est activé) ;
+    // le système ne la sonne pas, c'est l'app qui joue son bip et vibre.
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+      handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
     });
     if (Platform.OS === 'android') {
       // Le canal doit exister avant la demande d'autorisation (Android 13+).
@@ -118,5 +117,5 @@ export function openNotificationSettings() {
   void Linking.openSettings().catch(() => {});
 }
 
-/** Fin d'une série constatée dans l'app : sur téléphone la notification programmée s'en charge déjà. */
+/** Fin de série constatée dans l'app : sur téléphone, la notification programmée s'affiche d'elle-même (rien à faire ici). */
 export function showSetDoneNotification(_setNumber: number, _sets: number) {}

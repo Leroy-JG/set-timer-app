@@ -1,64 +1,24 @@
-import { Platform, Vibration } from 'react-native';
+import { Vibration } from 'react-native';
+import { playCue } from './sound';
 
-let audio: AudioContext | null = null;
+export { prepareSound } from './sound';
 
-type AudioCtor = typeof AudioContext;
-function audioContext(): AudioContext | null {
-  try {
-    const g = globalThis as { AudioContext?: AudioCtor; webkitAudioContext?: AudioCtor };
-    const Ctx = g.AudioContext ?? g.webkitAudioContext;
-    if (!Ctx) return null;
-    audio ??= new Ctx();
-    return audio;
-  } catch {
-    return null;
-  }
-}
-
-/** Bip court (Web Audio : aucun fichier, aucune connexion). */
-function beep(times: number) {
-  try {
-    const ctx = audioContext();
-    if (!ctx) return;
-    void ctx.resume();
-    for (let i = 0; i < times; i++) {
-      const t = ctx.currentTime + i * 0.28;
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.2);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.22);
-    }
-  } catch {
-    // pas de son disponible : la vibration et l'affichage suffisent
-  }
+/** « Go » : petit son de départ. */
+export function alertStart(sound: boolean) {
+  if (sound) playCue('go');
 }
 
 /**
- * Fin d'une série constatée dans l'app (`final` : dernière série).
- * `covered` : sur téléphone, la notification système fait déjà le son et la vibration.
+ * Fin d'une série constatée dans l'app (`final` : dernière série). Quand l'app est en arrière-plan, c'est la notification
+ * programmée qui prévient (son et vibration du téléphone).
+ * `buzz` : vibrer aussi (fin naturelle) ; un appui sur le chrono ne fait que le son.
  */
-export function alertSetDone(final: boolean, covered: boolean) {
-  if (covered) return;
+export function alertSetDone(final: boolean, sound: boolean, buzz: boolean) {
+  if (sound) playCue(final ? 'final' : 'end');
+  if (!buzz) return;
   try {
     Vibration.vibrate(final ? [0, 400, 150, 400, 150, 400] : [0, 350]);
   } catch {
     // vibration indisponible
-  }
-  if (Platform.OS === 'web') beep(final ? 3 : 1);
-}
-
-/** À appeler sur un geste de l'utilisateur (« Démarrer ») : les navigateurs n'autorisent le son qu'après un geste. */
-export function primeAudio() {
-  if (Platform.OS !== 'web') return;
-  try {
-    void audioContext()?.resume();
-  } catch {
-    // ignoré
   }
 }

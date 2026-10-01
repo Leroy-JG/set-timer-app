@@ -2,7 +2,7 @@
   "expo": {
     "name": "Binkām",
     "slug": "set-timer-app",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "scheme": "binkam",
     "userInterfaceStyle": "automatic",
@@ -32,7 +32,7 @@
     ],
     "android": {
       "package": "com.binkam.app",
-      "versionCode": 1,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#5C2E8A"
