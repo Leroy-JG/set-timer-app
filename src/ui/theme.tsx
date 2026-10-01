@@ -16,6 +16,9 @@ export interface Theme {
   onAction: string;
   /** Anneau de progression. */
   bar: string;
+  /** Eau du cadran : vague de devant et vague de derrière (le texte reste lisible dessus). */
+  water: string;
+  waterBack: string;
   /** Tiret de série terminée (blanc en sombre). */
   done: string;
   success: string;
@@ -36,6 +39,8 @@ export function themeFor(p: Palette, dark: boolean): Theme {
       action: FAMILY.accent, // le fond de marque est trop sombre sur la nuit : l'or porte l'action
       onAction: FAMILY.warmBlack,
       bar: p.secondary,
+      water: '#2B5F99',
+      waterBack: '#3A78B5',
       done: '#FFFFFF',
       success: FAMILY.success.dark,
       error: FAMILY.error.dark,
@@ -53,6 +58,8 @@ export function themeFor(p: Palette, dark: boolean): Theme {
     action: p.ground,
     onAction: '#FFFFFF',
     bar: p.ground,
+    water: '#8DB2DD',
+    waterBack: '#A9C8EA',
     done: p.ground,
     success: FAMILY.success.light,
     error: FAMILY.error.light,
@@ -74,8 +81,6 @@ export function useTheme(): Theme {
 }
 
 export const FONT = {
-  regular: 'Raleway_400Regular',
-  medium: 'Raleway_500Medium',
   semibold: 'Raleway_600SemiBold',
   bold: 'Raleway_700Bold',
   extrabold: 'Raleway_800ExtraBold',

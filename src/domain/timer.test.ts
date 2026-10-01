@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   angleFraction,
-  canEdit,
   clampSeconds,
   clampSets,
   formatTime,
   initialState,
   isWaitingNext,
-  pause,
   remainingFraction,
   reset,
   sanitizeConfig,
@@ -55,25 +53,18 @@ describe('formatTime', () => {
 });
 
 describe('décompte', () => {
-  it('démarre, avance, se met en pause et reprend sans perdre de temps', () => {
+  it('démarre et avance à partir de l’heure réelle', () => {
     let s = running(1_000);
-    expect(s.phase).toBe('running');
+    expect(s).toEqual({ phase: 'running', completed: 0, remainingMs: 30_000, endAt: 31_000 });
     s = tick(s, config, 11_000);
     expect(s.remainingMs).toBe(20_000);
-    s = pause(s, config, 11_000);
-    expect(s.phase).toBe('paused');
-    expect(s.remainingMs).toBe(20_000);
-    s = tick(s, config, 500_000); // en pause : rien ne bouge
-    expect(s.remainingMs).toBe(20_000);
-    s = start(s, config, 600_000);
-    expect(s.endAt).toBe(620_000);
+    expect(start(s, config, 20_000)).toBe(s); // déjà en marche : un deuxième Go ne change rien
   });
 
   it('à 00:00 compte la série, le chrono reste à 00:00 et attend le prochain Go', () => {
     const s = tick(running(0), config, 30_000);
     expect(s).toEqual({ phase: 'idle', completed: 1, remainingMs: 0, endAt: null });
     expect(isWaitingNext(s)).toBe(true);
-    expect(canEdit(s)).toBe(false);
     // le Go suivant repart de la durée pleine
     const next = start(s, config, 100_000);
     expect(next).toEqual({ phase: 'running', completed: 1, remainingMs: 30_000, endAt: 130_000 });
@@ -96,10 +87,6 @@ describe('décompte', () => {
     const s = tick(running(0), config, 10 * 60_000);
     expect(s.completed).toBe(1);
     expect(s.phase).toBe('idle');
-  });
-
-  it("met en pause une série dont l'heure vient de passer : elle est comptée, pas perdue", () => {
-    expect(pause(running(0), config, 30_500).completed).toBe(1);
   });
 
   it('une horloge système remise en arrière ne rallonge pas la série au-delà de sa durée', () => {
@@ -126,13 +113,13 @@ describe('déplacer l’horloge sur le cercle', () => {
     expect(remainingFraction(s, two)).toBe(0.75);
   });
 
-  it('on peut aussi rajouter du temps (revenir en arrière), même en pause', () => {
+  it('on peut aussi rajouter du temps (revenir en arrière)', () => {
     let s = tick(start(initialState(two), two, 0), two, 100_000); // reste 20 s
     s = seek(s, two, 0.1, 100_000);
     expect(s.remainingMs).toBe(108_000);
-    s = pause(s, two, 100_000);
+    expect(s.endAt).toBe(208_000);
     s = seek(s, two, 0.5, 100_000);
-    expect(s).toMatchObject({ phase: 'paused', remainingMs: 60_000, endAt: null });
+    expect(s).toMatchObject({ phase: 'running', remainingMs: 60_000, endAt: 160_000 });
   });
 
   it('ne termine jamais la série de lui-même : il reste au moins 1 s', () => {
@@ -173,9 +160,7 @@ describe('terminer la série en appuyant sur le chrono', () => {
     expect(s).toEqual({ phase: 'idle', completed: 1, remainingMs: 0, endAt: null });
   });
 
-  it('fonctionne aussi en pause, et termine tout à la dernière série', () => {
-    const paused = pause(running(0), config, 5_000);
-    expect(skip(paused, config).completed).toBe(1);
+  it('termine tout à la dernière série', () => {
     const last: TimerState = { phase: 'running', completed: 2, remainingMs: 10_000, endAt: 10_000 };
     expect(skip(last, config)).toEqual({ phase: 'done', completed: 3, remainingMs: 0, endAt: null });
   });
@@ -186,14 +171,9 @@ describe('terminer la série en appuyant sur le chrono', () => {
   });
 });
 
-describe('édition et réinitialisation', () => {
-  it("les réglages ne changent qu'avant de commencer", () => {
-    const s = initialState(config);
-    expect(canEdit(s)).toBe(true);
-    expect(canEdit(running())).toBe(false);
-    expect(canEdit(pause(running(), config, 1))).toBe(false);
-    expect(canEdit(tick(running(), config, 30_000))).toBe(false); // entre deux séries
-    expect(canEdit(reset(config))).toBe(true);
+describe('réinitialisation', () => {
+  it('repart de zéro avec la durée pleine, sans série comptée', () => {
+    expect(reset(config)).toEqual({ phase: 'idle', completed: 0, remainingMs: 30_000, endAt: null });
   });
 });
 
@@ -202,7 +182,6 @@ describe('état enregistré (app fermée ou tuée par le système)', () => {
     const states: TimerState[] = [
       initialState(config),
       { phase: 'running', completed: 1, remainingMs: 12_000, endAt: 1_700_000_000_000 },
-      { phase: 'paused', completed: 2, remainingMs: 7_000, endAt: null },
       { phase: 'idle', completed: 1, remainingMs: 0, endAt: null },
       { phase: 'done', completed: 3, remainingMs: 0, endAt: null },
     ];
@@ -219,8 +198,7 @@ describe('état enregistré (app fermée ou tuée par le système)', () => {
       { phase: 'running', completed: 0, remainingMs: 10, endAt: null },
       { phase: 'running', completed: 0, remainingMs: 10, endAt: NaN },
       { phase: 'running', completed: 0, remainingMs: 10, endAt: -5 },
-      { phase: 'paused', completed: 0, remainingMs: 0, endAt: null },
-      { phase: 'paused', completed: 0, remainingMs: 'a', endAt: null },
+      { phase: 'paused', completed: 0, remainingMs: 7_000, endAt: null }, // ancien état : plus de pause
       { phase: 'idle', completed: 1.5, remainingMs: 0, endAt: null },
       { phase: 'idle', completed: -1, remainingMs: 0, endAt: null },
       { phase: 'idle', completed: 9, remainingMs: 0, endAt: null },
@@ -232,7 +210,7 @@ describe('état enregistré (app fermée ou tuée par le système)', () => {
   });
 
   it('borne un temps restant plus grand que la durée (réglages changés entre-temps)', () => {
-    expect(sanitizeState({ phase: 'paused', completed: 0, remainingMs: 900_000, endAt: null }, config).remainingMs).toBe(30_000);
+    expect(sanitizeState({ phase: 'running', completed: 0, remainingMs: 900_000, endAt: 5_000 }, config).remainingMs).toBe(30_000);
   });
 
   it('un décompte interrompu dont l’heure est passée compte la série à la reprise', () => {

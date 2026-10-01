@@ -1,8 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { PanResponder, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Svg, { Circle, Path, Rect } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { angleFraction, unwrapFraction } from '../domain/timer';
 import { FONT, useTheme } from './theme';
+import { Water } from './Water';
+
+/** Part de temps restante (1 → 0). Pendant le décompte, ce composant se redessine seul (assez souvent pour un mouvement fluide). */
+function useFraction(running: boolean, endAt: number | null, totalMs: number, remainingMs: number): number {
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    if (!running) return;
+    const every = Math.min(250, Math.max(33, Math.round(totalMs / 720))); // environ un demi-degré par image
+    const id = setInterval(redraw, every);
+    return () => clearInterval(id);
+  }, [running, totalMs]);
+  const left = running && endAt !== null ? endAt - Date.now() : remainingMs;
+  return Math.min(1, Math.max(0, left / totalMs));
+}
 
 /**
  * Anneau de progression : la partie colorée est le temps qui reste ; elle se vide dans le sens des aiguilles d'une montre
@@ -12,22 +26,28 @@ import { FONT, useTheme } from './theme';
  */
 export function Ring({
   size,
-  fraction,
+  running,
+  endAt,
+  totalMs,
+  remainingMs,
   complete,
-  interactive,
   onSeek,
   children,
 }: {
   size: number;
-  /** Temps restant (1 → 0). */
-  fraction: number;
+  /** Décompte en cours : le cercle et l'eau suivent l'heure réelle (`endAt`) ; sinon ils restent sur `remainingMs`. */
+  running: boolean;
+  endAt: number | null;
+  totalMs: number;
+  remainingMs: number;
   /** Toutes les séries sont faites : anneau plein, en vert. */
   complete?: boolean;
-  interactive?: boolean;
   onSeek?: (elapsed: number) => void;
   children?: React.ReactNode;
 }) {
   const theme = useTheme();
+  const interactive = running;
+  const fraction = useFraction(running, endAt, totalMs, remainingMs);
   const stroke = Math.max(12, Math.round(size * 0.055));
   const pad = Math.round(stroke * 1.2); // marge pour la lueur de l'arc et le curseur, qui dépassent du cercle
   const r = (size - stroke) / 2;
@@ -124,6 +144,9 @@ export function Ring({
         Platform.OS === 'web' ? ({ touchAction: 'none', userSelect: 'none', cursor: interactive ? 'pointer' : 'default' } as object) : null,
       ]}
     >
+      <View pointerEvents="none" style={{ position: 'absolute', alignItems: 'center', justifyContent: 'center', width: size, height: size }}>
+        <Water d={Math.round(size - 2 * stroke - 8)} running={running} endAt={endAt} totalMs={totalMs} fraction={complete ? 0 : fraction} />
+      </View>
       <View pointerEvents="none" style={{ position: 'absolute', left: -pad, top: -pad, width: size + 2 * pad, height: size + 2 * pad }}>
         <Svg width={size + 2 * pad} height={size + 2 * pad} viewBox={`${-pad} ${-pad} ${size + 2 * pad} ${size + 2 * pad}`}>
           <Circle cx={size / 2} cy={size / 2} r={r} stroke={theme.track} strokeWidth={stroke} fill="none" />
@@ -170,12 +193,14 @@ export function Ring({
 /**
  * Une série = un tiret. Gris tant qu'elle n'est pas faite, blanc une fois terminée ;
  * le tiret de la série en cours se remplit au fil du temps (`current` = part écoulée, 0 → 1).
+ * Les tirets se partagent toute la largeur disponible, quel que soit leur nombre.
  */
-export function Dashes({ total, completed, current }: { total: number; completed: number; current: number }) {
+export const Dashes = memo(function Dashes({ total, completed, current }: { total: number; completed: number; current: number }) {
   const theme = useTheme();
+  const gap = total > 40 ? 1 : total > 20 ? 3 : 6;
   return (
     <View
-      style={styles.dashes}
+      style={[styles.dashes, { gap }]}
       role="progressbar"
       aria-label={`Série ${Math.min(completed + 1, total)} sur ${total}`}
       aria-valuemin={0}
@@ -192,43 +217,26 @@ export function Dashes({ total, completed, current }: { total: number; completed
       })}
     </View>
   );
-}
+});
 
-function RoundButton({
-  label,
-  onPress,
-  disabled,
-  size = 44,
-  filled,
-  children,
-}: {
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  size?: number;
-  filled?: boolean;
-  children: (color: string) => React.ReactNode;
-}) {
+function RoundButton({ label, onPress, children }: { label: string; onPress: () => void; children: (color: string) => React.ReactNode }) {
   const theme = useTheme();
-  const color = filled ? theme.onAction : theme.text;
+  const color = theme.text;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: !!disabled }}
-      disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
         {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
+          width: 44,
+          height: 44,
+          borderRadius: 22,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: filled ? theme.action : 'transparent',
-          borderWidth: filled ? 0 : 1,
+          borderWidth: 1,
           borderColor: theme.border,
-          opacity: disabled ? 0.35 : pressed ? 0.75 : 1,
+          opacity: pressed ? 0.75 : 1,
         },
       ]}
     >
@@ -237,60 +245,82 @@ function RoundButton({
   );
 }
 
-export function PlayPauseButton({ running, finished, onPress }: { running: boolean; finished: boolean; onPress: () => void }) {
+/** Petit bouton à bascule (son, notifications, écran allumé) : plein quand il est activé, barré quand il est coupé. */
+export const ToggleButton = memo(function ToggleButton({
+  label,
+  caption,
+  on,
+  onToggle,
+  icon,
+}: {
+  label: string;
+  caption: string;
+  on: boolean;
+  onToggle: (next: boolean) => void;
+  icon: 'sound' | 'bell' | 'sun';
+}) {
+  const theme = useTheme();
+  const color = on ? theme.onAction : theme.muted;
   return (
-    <RoundButton
-      size={84}
-      filled
-      onPress={onPress}
-      label={finished ? 'Recommencer' : running ? 'Pause' : 'Démarrer'}
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      aria-checked={on}
+      onPress={() => onToggle(!on)}
+      style={({ pressed }) => [{ alignItems: 'center', gap: 5, opacity: pressed ? 0.7 : 1 }]}
     >
-      {(color) => (
-        <Svg width={34} height={34} viewBox="0 0 24 24">
-          {finished ? (
-            <ResetShape color={color} />
-          ) : running ? (
+      <View
+        style={{
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: on ? theme.action : theme.card,
+          borderWidth: on ? 0 : 1,
+          borderColor: theme.border,
+        }}
+      >
+        <Svg width={24} height={24} viewBox="0 0 24 24">
+          {icon === 'sound' && (
             <>
-              <Rect x={6} y={4} width={4} height={16} rx={1.5} fill={color} />
-              <Rect x={14} y={4} width={4} height={16} rx={1.5} fill={color} />
+              <Path d="M4 9.5v5h3.5l4.5 4V5.5l-4.5 4H4z" fill={color} />
+              <Path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.8 7.8 0 0 1 0 10.8" stroke={color} strokeWidth={1.9} strokeLinecap="round" fill="none" />
             </>
-          ) : (
-            <Path d="M8 4.8v14.4a1 1 0 0 0 1.5.86l12-7.2a1 1 0 0 0 0-1.72l-12-7.2A1 1 0 0 0 8 4.8z" fill={color} />
+          )}
+          {icon === 'bell' && (
+            <>
+              <Path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.6H4.4L6 16.5z" fill={color} />
+              <Path d="M10 20.4a2 2 0 0 0 4 0" stroke={color} strokeWidth={1.9} strokeLinecap="round" fill="none" />
+            </>
+          )}
+          {icon === 'sun' && (
+            <>
+              <Circle cx={12} cy={12} r={4} fill={color} />
+              <Path
+                d="M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M5.6 18.4l1.7-1.7M16.7 7.3l1.7-1.7"
+                stroke={color}
+                strokeWidth={1.9}
+                strokeLinecap="round"
+              />
+            </>
+          )}
+          {!on && (
+            <>
+              <Line x1={4.5} y1={4.5} x2={19.5} y2={19.5} stroke={theme.card} strokeWidth={5} strokeLinecap="round" />
+              <Line x1={4.5} y1={4.5} x2={19.5} y2={19.5} stroke={color} strokeWidth={2} strokeLinecap="round" />
+            </>
           )}
         </Svg>
-      )}
-    </RoundButton>
+      </View>
+      <Text style={{ color: theme.muted, fontFamily: FONT.semibold, fontSize: 11, letterSpacing: 0.3 }}>{caption}</Text>
+    </Pressable>
   );
-}
+});
 
-function ResetShape({ color }: { color: string }) {
+function StepButton({ sign, onPress, label }: { sign: '−' | '+'; onPress: () => void; label: string }) {
   return (
-    <Path
-      d="M4 12a8 8 0 1 0 2.6-5.9M4 4v4.5h4.5"
-      stroke={color}
-      strokeWidth={2.2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      fill="none"
-    />
-  );
-}
-
-export function ResetButton({ onPress, disabled }: { onPress: () => void; disabled?: boolean }) {
-  return (
-    <RoundButton size={52} onPress={onPress} disabled={disabled} label="Réinitialiser">
-      {(color) => (
-        <Svg width={24} height={24} viewBox="0 0 24 24">
-          <ResetShape color={color} />
-        </Svg>
-      )}
-    </RoundButton>
-  );
-}
-
-function StepButton({ sign, onPress, disabled, label }: { sign: '−' | '+'; onPress: () => void; disabled: boolean; label: string }) {
-  return (
-    <RoundButton size={44} onPress={onPress} disabled={disabled} label={label}>
+    <RoundButton onPress={onPress} label={label}>
       {(color) => (
         <Svg width={18} height={18} viewBox="0 0 24 24">
           <Path d={sign === '+' ? 'M12 4v16M4 12h16' : 'M4 12h16'} stroke={color} strokeWidth={2.4} strokeLinecap="round" fill="none" />
@@ -306,14 +336,12 @@ function NumberField({
   onCommit,
   label,
   pad,
-  disabled,
   width = 56,
 }: {
   value: number;
   onCommit: (n: number) => void;
   label: string;
   pad?: boolean;
-  disabled: boolean;
   width?: number;
 }) {
   const theme = useTheme();
@@ -335,7 +363,6 @@ function NumberField({
     <TextInput
       accessibilityLabel={label}
       value={text}
-      editable={!disabled}
       onChangeText={(v) => setText(v.replace(/\D/g, '').slice(0, 2))}
       onFocus={() => setFocused(true)}
       onBlur={commit}
@@ -344,54 +371,52 @@ function NumberField({
       keyboardType="number-pad"
       returnKeyType="done"
       maxLength={2}
-      style={[styles.field, { width, color: theme.text, fontFamily: FONT.bold, fontVariant: ['lining-nums', 'tabular-nums'], opacity: disabled ? 0.55 : 1 }]}
+      style={[styles.field, { width, color: theme.text, fontFamily: FONT.bold, fontVariant: ['lining-nums', 'tabular-nums'] }]}
     />
   );
 }
 
-export function SettingsCard({
+/** Durée et nombre de séries : modifiables à tout moment (changer l'un ou l'autre remet le chrono à zéro). */
+export const SettingsCard = memo(function SettingsCard({
   seconds,
   sets,
-  editable,
   onChange,
 }: {
   seconds: number;
   sets: number;
-  editable: boolean;
   onChange: (patch: { seconds?: number; sets?: number }) => void;
 }) {
   const theme = useTheme();
   const minutes = Math.floor(seconds / 60);
   const secs = seconds % 60;
-  const disabled = !editable;
   return (
     <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
       <View style={styles.row}>
         <Text style={[styles.label, { color: theme.muted, fontFamily: FONT.semibold }]}>Durée</Text>
         <View style={styles.control}>
-          <StepButton sign="−" label="Durée −5 secondes" disabled={disabled} onPress={() => onChange({ seconds: seconds - 5 })} />
-          <NumberField value={minutes} label="Minutes" pad disabled={disabled} onCommit={(m) => onChange({ seconds: m * 60 + secs })} />
+          <StepButton sign="−" label="Durée −5 secondes" onPress={() => onChange({ seconds: seconds - 5 })} />
+          <NumberField value={minutes} label="Minutes" pad onCommit={(m) => onChange({ seconds: m * 60 + secs })} />
           <Text style={[styles.colon, { color: theme.muted, fontFamily: FONT.bold }]}>:</Text>
-          <NumberField value={secs} label="Secondes" pad disabled={disabled} onCommit={(s) => onChange({ seconds: minutes * 60 + Math.min(s, 59) })} />
-          <StepButton sign="+" label="Durée +5 secondes" disabled={disabled} onPress={() => onChange({ seconds: seconds + 5 })} />
+          <NumberField value={secs} label="Secondes" pad onCommit={(s) => onChange({ seconds: minutes * 60 + Math.min(s, 59) })} />
+          <StepButton sign="+" label="Durée +5 secondes" onPress={() => onChange({ seconds: seconds + 5 })} />
         </View>
       </View>
       <View style={[styles.divider, { backgroundColor: theme.border }]} />
       <View style={styles.row}>
         <Text style={[styles.label, { color: theme.muted, fontFamily: FONT.semibold }]}>Séries</Text>
         <View style={styles.control}>
-          <StepButton sign="−" label="Une série de moins" disabled={disabled} onPress={() => onChange({ sets: sets - 1 })} />
-          <NumberField value={sets} label="Nombre de séries" disabled={disabled} width={88} onCommit={(n) => onChange({ sets: n })} />
-          <StepButton sign="+" label="Une série de plus" disabled={disabled} onPress={() => onChange({ sets: sets + 1 })} />
+          <StepButton sign="−" label="Une série de moins" onPress={() => onChange({ sets: sets - 1 })} />
+          <NumberField value={sets} label="Nombre de séries" width={88} onCommit={(n) => onChange({ sets: n })} />
+          <StepButton sign="+" label="Une série de plus" onPress={() => onChange({ sets: sets + 1 })} />
         </View>
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
-  dashes: { flexDirection: 'row', gap: 6, alignSelf: 'stretch' },
-  dash: { flex: 1, height: 8, borderRadius: 4, overflow: 'hidden', maxWidth: 64 },
+  dashes: { flexDirection: 'row', alignSelf: 'stretch' },
+  dash: { flex: 1, flexBasis: 0, minWidth: 0, height: 8, borderRadius: 4, overflow: 'hidden' },
   card: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6, alignSelf: 'stretch' },
   row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 68 },
   divider: { height: 1 },

@@ -1,19 +1,23 @@
 import { useCallback, useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { formatTime, isWaitingNext, remainingFraction } from '../src/domain/timer';
+import { formatTime, remainingFraction } from '../src/domain/timer';
 import { openNotificationSettings, useNotificationStatus } from '../src/notifications';
 import { Backdrop, type Tone } from '../src/ui/Backdrop';
-import { Dashes, PlayPauseButton, ResetButton, Ring, SettingsCard } from '../src/ui/components';
+import { Dashes, Ring, SettingsCard, ToggleButton } from '../src/ui/components';
 import { FONT, useTheme } from '../src/ui/theme';
 import { useTimer } from '../src/ui/useTimer';
 
 export default function TimerScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
-  const { config, state, ready, editable, update, toggle, finishSet, seekTo, restart } = useTimer();
+  const { width, height } = useWindowDimensions();
+  const { config, state, prefs, ready, update, press, seekTo, setPref } = useTimer();
   const notifications = useNotificationStatus();
+
+  const onSound = useCallback((v: boolean) => setPref('sound', v), [setPref]);
+  const onNotifications = useCallback((v: boolean) => setPref('notifications', v), [setPref]);
+  const onAwake = useCallback((v: boolean) => setPref('awake', v), [setPref]);
 
   // Centre du cercle à l'écran : le halo de fond s'y place.
   const ringBox = useRef<View>(null);
@@ -26,44 +30,44 @@ export default function TimerScreen() {
     });
   }, []);
 
-  const ringSize = Math.min(Math.max(width - 64, 200), 320);
-  const fraction = remainingFraction(state, config);
+  // Le cercle prend toute la largeur utile (sans dépasser la hauteur de l'écran, pour que tout reste visible).
+  const ringSize = Math.round(Math.min(Math.max(width - 40, 200), 360, Math.max(height - 400, 220)));
+  const total = config.seconds * 1000;
   const running = state.phase === 'running';
-  const paused = state.phase === 'paused';
   const finished = state.phase === 'done';
-  const live = running || paused; // décompte en cours ou en pause : le cercle et le chrono répondent aux appuis
-  const waiting = isWaitingNext(state);
   const tone: Tone = finished ? 'done' : running ? 'running' : 'idle';
 
   const n = state.completed + 1;
-  const caption = finished
-    ? 'Terminé'
-    : paused
-      ? `En pause · série ${n} sur ${config.sets}`
-      : waiting
-        ? `Prêt · série ${n} sur ${config.sets}`
-        : `Série ${n} sur ${config.sets}`;
+  const caption = finished ? 'Terminé' : `Série ${n} sur ${config.sets}`;
 
   if (!ready) return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
 
-  const time = (
-    <>
-      <Text
-        accessibilityRole="timer"
-        style={{
-          color: finished ? theme.success : theme.text,
-          fontFamily: FONT.extrabold,
-          fontSize: ringSize * 0.22,
-          fontVariant: ['lining-nums', 'tabular-nums'],
-          letterSpacing: 1,
-        }}
-      >
-        {formatTime(state.remainingMs)}
-      </Text>
-      <Text style={{ color: theme.muted, fontFamily: FONT.semibold, fontSize: 15, marginTop: 4, textAlign: 'center' }}>{caption}</Text>
-    </>
+  // Au centre : « GO » tant que le chrono ne tourne pas, puis le temps restant. Un seul appui lance, un autre termine la série.
+  const center = running ? (
+    <Text
+      accessibilityRole="timer"
+      numberOfLines={1}
+      adjustsFontSizeToFit
+      minimumFontScale={0.6}
+      style={{
+        color: theme.text,
+        fontFamily: FONT.extrabold,
+        fontSize: ringSize * 0.2,
+        fontVariant: ['lining-nums', 'tabular-nums'],
+        letterSpacing: 0.5,
+        ...(Platform.OS === 'web' ? ({ whiteSpace: 'nowrap' } as object) : null),
+      }}
+    >
+      {formatTime(state.remainingMs)}
+    </Text>
+  ) : (
+    <Text
+      numberOfLines={1}
+      style={{ color: theme.text, fontFamily: FONT.extrabold, fontSize: ringSize * 0.26, letterSpacing: 4, paddingLeft: 4 }}
+    >
+      GO
+    </Text>
   );
-  const centerStyle = { width: ringSize * 0.66, height: ringSize * 0.5, borderRadius: ringSize * 0.25, alignItems: 'center', justifyContent: 'center' } as const;
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -73,7 +77,7 @@ export default function TimerScreen() {
         contentContainerStyle={{
           flexGrow: 1,
           alignItems: 'center',
-          gap: 28,
+          gap: 24,
           paddingHorizontal: 20,
           paddingTop: insets.top + 20,
           paddingBottom: insets.bottom + 28,
@@ -83,38 +87,39 @@ export default function TimerScreen() {
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <SettingsCard seconds={config.seconds} sets={config.sets} editable={editable} onChange={update} />
+        <SettingsCard seconds={config.seconds} sets={config.sets} onChange={update} />
 
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 22 }}>
           <View ref={ringBox} onLayout={measure}>
-            <Ring size={ringSize} fraction={fraction} complete={finished} interactive={live} onSeek={seekTo}>
-              {live ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Terminer la série"
-                  accessibilityHint="Compte la série comme faite et attend le prochain départ"
-                  onPress={finishSet}
-                  style={({ pressed }) => [centerStyle, { opacity: pressed ? 0.55 : 1 }]}
-                >
-                  {time}
-                </Pressable>
-              ) : (
-                <View style={centerStyle}>{time}</View>
-              )}
+            <Ring size={ringSize} running={running} endAt={state.endAt} totalMs={total} remainingMs={state.remainingMs} complete={finished} onSeek={seekTo}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={running ? 'Terminer la série' : 'Go, lancer le chrono'}
+                onPress={press}
+                style={({ pressed }) => ({
+                  width: ringSize * 0.72,
+                  height: ringSize * 0.72,
+                  borderRadius: ringSize * 0.36,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: pressed ? 0.6 : 1,
+                })}
+              >
+                {center}
+                <Text style={{ color: theme.text, opacity: 0.85, fontFamily: FONT.semibold, fontSize: 15, marginTop: 4, textAlign: 'center' }}>
+                  {caption}
+                </Text>
+              </Pressable>
             </Ring>
           </View>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20 }}>
-            <ResetButton onPress={restart} disabled={state.phase === 'idle' && state.completed === 0} />
-            <PlayPauseButton running={running} finished={finished} onPress={toggle} />
-            <View style={{ width: 52 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 26 }}>
+            <ToggleButton label="Son dans l’app" caption="Son" icon="sound" on={prefs.sound} onToggle={onSound} />
+            <ToggleButton label="Notifications de fin de série" caption="Notifs" icon="bell" on={prefs.notifications} onToggle={onNotifications} />
+            <ToggleButton label="Écran toujours allumé" caption="Écran" icon="sun" on={prefs.awake} onToggle={onAwake} />
           </View>
 
-          {live ? (
-            <Text style={{ color: theme.muted, fontFamily: FONT.medium, fontSize: 12.5, textAlign: 'center', lineHeight: 18, maxWidth: 280 }}>
-              Touchez le cercle pour avancer ou reculer{'\n'}Touchez le chrono pour terminer la série
-            </Text>
-          ) : Platform.OS !== 'web' && notifications === 'denied' ? (
+          {Platform.OS !== 'web' && prefs.notifications && notifications === 'denied' ? (
             <Pressable accessibilityRole="link" onPress={openNotificationSettings}>
               <Text style={{ color: theme.error, fontFamily: FONT.semibold, fontSize: 13, textAlign: 'center', maxWidth: 290, lineHeight: 18 }}>
                 Notifications désactivées : le téléphone ne sonnera pas en arrière-plan. Touchez ici pour les activer.
@@ -123,7 +128,7 @@ export default function TimerScreen() {
           ) : null}
         </View>
 
-        <Dashes total={config.sets} completed={state.completed} current={live ? 1 - fraction : 0} />
+        <Dashes total={config.sets} completed={state.completed} current={running ? 1 - remainingFraction(state, config) : 0} />
       </ScrollView>
     </View>
   );

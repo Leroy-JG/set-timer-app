@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Animated, Easing, Platform, StyleSheet, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { FAMILY, PIGMENTS } from '../brand';
@@ -51,7 +51,7 @@ function Layer({ width, height, halos, id }: { width: number; height: number; ha
 }
 
 /** Fond : halos de couleur derrière l'écran (`focus` = centre du cercle, en pixels). */
-export function Backdrop({ tone, focus }: { tone: Tone; focus?: { x: number; y: number } | null }) {
+export const Backdrop = memo(function Backdrop({ tone, focus }: { tone: Tone; focus?: { x: number; y: number } | null }) {
   const theme = useTheme();
   const { width, height } = useWindowDimensions();
   const k = theme.dark ? 0 : 1;
@@ -85,4 +85,4 @@ export function Backdrop({ tone, focus }: { tone: Tone; focus?: { x: number; y: 
       ))}
     </View>
   );
-}
+});

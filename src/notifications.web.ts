@@ -33,10 +33,6 @@ export function useNotificationStatus(): NotificationStatus {
   return useSyncExternalStore(subscribe, () => status, () => status);
 }
 
-export function notificationCoversAlert(): boolean {
-  return false;
-}
-
 export async function setupNotifications(): Promise<void> {
   refresh();
 }
