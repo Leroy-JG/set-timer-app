@@ -167,9 +167,9 @@ assert_no_notif() {
 }
 
 service_state() { a dumpsys activity services "$PKG" 2>/dev/null; }
-# minuteries EndReceiver EN ATTENTE : on s'arrête avant les statistiques d'historique (« Top Alarms », « Alarm Stats »), qui citent aussi
-# les minuteries déjà sonnées
-alarm_state() { a dumpsys alarm 2>/dev/null | awk '/^  (Recent problems|Top Alarms|Alarm Stats):/ {exit} /expo.modules.livetimer.EndReceiver/ {c++} END {print c+0}'; }
+# minuteries EndReceiver EN ATTENTE : on s'arrête avant l'historique (« Removal history » = minuteries annulées, « Top Alarms » / « Alarm Stats » =
+# minuteries déjà sonnées), qui cite aussi l'app
+alarm_state() { a dumpsys alarm 2>/dev/null | awk '/^  (Removal history|Recent problems|Top Alarms|Alarm Stats):/ {exit} /expo.modules.livetimer.EndReceiver/ {c++} END {print c+0}'; }
 
 wake_screen() { a input keyevent 224; sleep 1; }
 # écran verrouillé = l'écran de verrouillage est affiché (dumpsys window en cite plusieurs fois l'état : un seul « true » suffit) ou la fenêtre
@@ -269,6 +269,7 @@ if grep -q "TimerService" "$OUT/services-after-go.txt" && grep -q "isForeground=
 else
   fail "TimerService n'est pas au premier plan (voir services-after-go.txt)"
 fi
+a dumpsys alarm >"$OUT/alarm-after-go.txt" 2>&1
 [ "$(alarm_state)" -ge 1 ] && pass "la minuterie de fin (EndReceiver) est programmée dans AlarmManager" || fail "aucune minuterie EndReceiver dans dumpsys alarm"
 grep -q "alarm_clock\|AlarmClockInfo" <(a dumpsys alarm 2>/dev/null | grep -B2 -A6 "EndReceiver") && fail "la minuterie de fin est une « alarme de réveil » (setAlarmClock) : refusé" || pass "la minuterie de fin n'est pas une alarme de réveil"
 
@@ -355,14 +356,14 @@ ui_has "$OUT/lock-end.xml" "Série 1 sur 4 terminée" >/dev/null && pass "la not
 
 step "7. Retour dans l'app"
 unlock
+a cmd statusbar collapse >/dev/null 2>&1
+a am start -n "$PKG/.MainActivity" >/dev/null 2>&1
+sleep 3
 shot 07-app-apres-fin
 ui app-after-end
 ui_texts "$OUT/app-after-end.xml" "$PKG" | tee -a "$OUT/summary.txt"
 say "   fenêtre au premier plan : $(a dumpsys window 2>/dev/null | grep -m1 -E 'mCurrentFocus' | tr -d '\r')"
 grep -q "Série 2 sur 4" "$OUT/app-after-end.xml" 2>/dev/null && pass "l'app affiche « Série 2 sur 4 » (la série terminée est comptée)" || warn "« Série 2 sur 4 » non repéré (voir 07-app-apres-fin.png)"
-a cmd statusbar collapse >/dev/null 2>&1
-a am start -n "$PKG/.MainActivity" >/dev/null 2>&1
-sleep 2
 
 step "8. Arrêt par appui sur le chrono"
 tap_center # GO
@@ -414,6 +415,8 @@ else
   warn "ligne du compte à rebours introuvable dans le volet pour le balayage (voir shade2.xml)"
 fi
 a cmd statusbar collapse >/dev/null 2>&1
+a am start -n "$PKG/.MainActivity" >/dev/null 2>&1
+sleep 2
 tap_center # terminer
 
 step "11. Plantages"
