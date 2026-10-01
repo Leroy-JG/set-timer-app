@@ -167,16 +167,27 @@ assert_no_notif() {
 }
 
 service_state() { a dumpsys activity services "$PKG" 2>/dev/null; }
-alarm_state() { a dumpsys alarm 2>/dev/null | grep -c "expo.modules.livetimer.EndReceiver"; }
+# minuteries EndReceiver EN ATTENTE : on s'arrête avant les statistiques d'historique (« Top Alarms », « Alarm Stats »), qui citent aussi
+# les minuteries déjà sonnées
+alarm_state() { a dumpsys alarm 2>/dev/null | awk '/^  (Recent problems|Top Alarms|Alarm Stats):/ {exit} /expo.modules.livetimer.EndReceiver/ {c++} END {print c+0}'; }
 
 wake_screen() { a input keyevent 224; sleep 1; }
+keyguard_showing() { a dumpsys window 2>/dev/null | grep -Eo 'isKeyguardShowing=[a-z]+' | head -1 | grep -q true; }
 unlock() {
-  wake_screen
-  a input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 300
-  sleep 1
-  a input text "$PIN"
-  sleep 1
-  a input keyevent 66
+  local i
+  for i in 1 2 3; do
+    wake_screen
+    a input swipe $((W / 2)) $((H * 3 / 4)) $((W / 2)) $((H / 4)) 300
+    sleep 2
+    a input text "$PIN"
+    sleep 1
+    a input keyevent 66
+    sleep 3
+    keyguard_showing || return 0
+  done
+  # dernier recours (la sécurité de l'écran n'est pas ce qu'on teste ici) : on retire le code
+  a locksettings clear --old "$PIN" >/dev/null 2>&1
+  a wm dismiss-keyguard >/dev/null 2>&1
   sleep 2
 }
 
@@ -239,7 +250,7 @@ shot 02-apres-go
 step "2. Compte à rebours persistant juste après GO"
 notifs after-go
 assert_notif "$OUT/after-go.txt" 4242 "compte à rebours : chronomètre à rebours, silencieux, canal dédié" \
-  "channel=set-live" "android.showChronometer=true" "android.chronometerCountDown=true" "Série 1 sur 4"
+  "channel=set-live" "android.showChronometer=Boolean (true)" "android.chronometerCountDown=Boolean (true)" "Série 1 sur 4"
 BLOCK=$(notif_block "$OUT/after-go.txt" 4242)
 say "   extras de la notification : $(grep -E 'android\.(title|text|showChronometer|chronometerCountDown|showWhen|requestPromotedOngoing)|when=|usesChronometer|chronometer' <<<"$BLOCK" | tr -s ' ' | tr '\n' ';' | cut -c1-400)"
 say "   importance : $(grep -o 'importance=[0-9]*' <<<"$BLOCK" | head -1) ; flags : $(grep -o 'flags=0x[0-9a-f]*' <<<"$BLOCK" | head -1) ; visibilité : $(grep -o 'vis=[A-Z]*' <<<"$BLOCK" | head -1)"
@@ -358,7 +369,7 @@ notifs stopped
 assert_no_notif "$OUT/stopped.txt" 4242 "arrêt : le compte à rebours disparaît"
 assert_no_notif "$OUT/stopped.txt" 4243 "arrêt : pas de notification de fin"
 a dumpsys alarm >"$OUT/alarm-after-stop.txt" 2>&1
-grep -n "EndReceiver" "$OUT/alarm-after-stop.txt" | head -8 | sed 's/^/   alarm: /' | tee -a "$OUT/summary.txt"
+say "   minuteries EndReceiver en attente : $(alarm_state)"
 [ "$(alarm_state)" -eq 0 ] && pass "arrêt : la minuterie de fin est annulée" || fail "arrêt : la minuterie EndReceiver est toujours programmée"
 service_state | grep -q "TimerService" && fail "arrêt : TimerService tourne encore" || pass "arrêt : TimerService arrêté"
 
